@@ -7,15 +7,14 @@ and returning collected HTML snapshots.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Tuple, Optional, Dict, Any
-
-from playwright.sync_api import sync_playwright
-from playwright.sync_api import TimeoutError as PWTimeoutError
+from typing import Any
 from urllib.parse import unquote
 
-from ..ir.model import ScrapePlan, Navigate, Click, Fill, WaitFor
-from ...config.settings import settings
+from playwright.sync_api import TimeoutError as PWTimeoutError, sync_playwright
+
 from ...adapters.browser_use import BrowserUseSession, is_browser_use_available
+from ...config.settings import settings
+from ..ir.model import Click, Fill, Navigate, ScrapePlan, WaitFor
 
 
 def execute_plan(
@@ -25,10 +24,10 @@ def execute_plan(
     job_id: str,
     headless: bool = True,
     timeout_ms: int = 30000,
-    login_params: Optional[Dict[str, Any]] = None,
-) -> Tuple[List[str], List[Path]]:
-    html_snapshots: List[str] = []
-    screenshots: List[Path] = []
+    login_params: dict[str, Any] | None = None,
+) -> tuple[list[str], list[Path]]:
+    html_snapshots: list[str] = []
+    screenshots: list[Path] = []
 
     if not plan.steps:
         return html_snapshots, screenshots
@@ -38,7 +37,9 @@ def execute_plan(
         getattr(settings, "nav_backend", "playwright") == "browser_use"
     ) and is_browser_use_available()
     if use_browser_use:
-        sess = BrowserUseSession(headless=headless, timeout_ms=timeout_ms)
+        sess = BrowserUseSession(
+            headless=headless, timeout_ms=timeout_ms, login_params=login_params
+        )
         try:
             step_index = 0
             for step in plan.steps:
@@ -89,9 +90,7 @@ def execute_plan(
                 step_index += 1
                 if isinstance(step, Navigate):
                     # Support data: URLs to enable hermetic tests without network
-                    if isinstance(step.url, str) and step.url.startswith(
-                        "data:text/html"
-                    ):
+                    if isinstance(step.url, str) and step.url.startswith("data:text/html"):
                         try:
                             html_part = step.url.split(",", 1)[1]
                             page.set_content(unquote(html_part))
@@ -130,8 +129,7 @@ def execute_plan(
                 try:
                     page.evaluate("window.scrollTo(0, document.body.scrollHeight/2)")
                     out_path2 = (
-                        screenshots_dir
-                        / f"{'' if step_index else ''}step-{step_index}-scroll.png"
+                        screenshots_dir / f"{'' if step_index else ''}step-{step_index}-scroll.png"
                     )
                     page.screenshot(path=str(out_path2), full_page=True)
                     screenshots.append(out_path2)

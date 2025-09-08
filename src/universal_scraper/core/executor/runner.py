@@ -58,31 +58,100 @@ def run_v2_job(req: ScrapeRequest) -> ScrapeResponse:
         Path(settings.artifacts_root), job_id
     )
 
-    execution_log: list[str] = ["received", "planning"]
-    plan = build_plan(req)
+    execution_log: list[str] = ["received"]
 
-    execution_log.append("navigating")
-    html_pages, shots = execute_plan(
-        plan,
-        screenshots_dir,
-        html_dir,
-        job_id,
-        headless=settings.headless,
-        login_params=req.login_params,
-    )
-    execution_log.append("screenshots_captured" if shots else "no_screenshots")
+    # V2 uses browser-use agent to explore and build the ScrapePlan
+    start_url = req.target_urls[0] if req.target_urls else None
 
-    # Persist first HTML snapshot for future self-heal
-    if html_pages:
-        html_out = html_dir / f"{job_id}-page-1.html"
-        html_out.write_text(html_pages[0], encoding="utf-8")
+    if start_url and is_browser_use_available():
+        execution_log.append("exploring")
+        # Use browser-use agent to explore and discover the scraping path
+        try:
+            res = explore_with_browser_use(
+                start_url=start_url,
+                nl_request=req.nl_request,
+                schema=req.output_schema,
+                screenshots_dir=screenshots_dir,
+                html_dir=html_dir,
+                job_id=job_id,
+                max_steps=12,  # V2 uses fewer steps than V4
+                headless=settings.headless,
+            )
+            execution_log.append("exploration_complete")
 
-    execution_log.append("extracting")
-    # Best-effort extraction using schema
-    base_url = (
-        req.target_urls[0] if (req.target_urls and len(req.target_urls) > 0) else None
-    )
-    data = extract_data(req.output_schema, html_pages, base_url=base_url)
+            # Use the exploration result's data if available
+            if res.data:
+                data = res.data
+            else:
+                # Fallback to extraction from HTML pages
+                execution_log.append("extracting")
+                base_url = req.target_urls[0] if req.target_urls else None
+                data = extract_data(
+                    req.output_schema, res.html_pages, base_url=base_url
+                )
+
+            execution_log.append(
+                "screenshots_captured" if res.screenshots else "no_screenshots"
+            )
+
+            # Persist first HTML snapshot for future self-heal
+            if res.html_pages:
+                html_out = html_dir / f"{job_id}-page-1.html"
+                html_out.write_text(res.html_pages[0], encoding="utf-8")
+
+        except Exception:
+            # Fallback to simple planning if browser-use fails
+            execution_log.append("exploration_failed")
+            execution_log.append("planning")
+            plan = build_plan(req)
+
+            execution_log.append("navigating")
+            html_pages, shots = execute_plan(
+                plan,
+                screenshots_dir,
+                html_dir,
+                job_id,
+                headless=settings.headless,
+                login_params=req.login_params,
+            )
+            execution_log.append("screenshots_captured" if shots else "no_screenshots")
+
+            if html_pages:
+                html_out = html_dir / f"{job_id}-page-1.html"
+                html_out.write_text(html_pages[0], encoding="utf-8")
+
+            execution_log.append("extracting")
+            base_url = req.target_urls[0] if req.target_urls else None
+            data = extract_data(req.output_schema, html_pages, base_url=base_url)
+    else:
+        # Fallback when no URL or browser-use not available
+        execution_log.append("planning")
+        plan = build_plan(req)
+
+        execution_log.append("navigating")
+        html_pages, shots = execute_plan(
+            plan,
+            screenshots_dir,
+            html_dir,
+            job_id,
+            headless=settings.headless,
+            login_params=req.login_params,
+        )
+        execution_log.append("screenshots_captured" if shots else "no_screenshots")
+
+        # Persist first HTML snapshot for future self-heal
+        if html_pages:
+            html_out = html_dir / f"{job_id}-page-1.html"
+            html_out.write_text(html_pages[0], encoding="utf-8")
+
+        execution_log.append("extracting")
+        # Best-effort extraction using schema
+        base_url = (
+            req.target_urls[0]
+            if (req.target_urls and len(req.target_urls) > 0)
+            else None
+        )
+        data = extract_data(req.output_schema, html_pages, base_url=base_url)
 
     execution_log.append("done")
     return ScrapeResponse(job_id=job_id, execution_log=execution_log, data=data)

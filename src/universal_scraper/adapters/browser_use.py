@@ -25,12 +25,29 @@ def is_browser_use_available() -> bool:
 
 
 class BrowserUseSession:
-    def __init__(self, headless: bool = True, timeout_ms: int = 30000):
-        import browser_use  # type: ignore
+    def __init__(
+        self, headless: bool = True, timeout_ms: int = 30000, login_params: dict | None = None
+    ):
+        # V2 uses Browser-Use to drive Playwright for executing IR steps
+        # Not as an autonomous agent, but as a controlled driver
+        from playwright.sync_api import sync_playwright
 
-        # This is a placeholder; adapt to actual Browser-Use API when present
-        self._bu = browser_use.Browser(headless=headless, default_timeout=timeout_ms)
-        self._page = self._bu.new_page()
+        self._playwright = sync_playwright().start()
+        self._browser = self._playwright.chromium.launch(headless=headless)
+
+        # Handle login params if provided
+        context_options = {}
+        if login_params and isinstance(login_params, dict):
+            http_basic = login_params.get("http_basic")
+            if http_basic and isinstance(http_basic, dict):
+                context_options["http_credentials"] = {
+                    "username": http_basic.get("username", ""),
+                    "password": http_basic.get("password", ""),
+                }
+
+        self._context = self._browser.new_context(**context_options)
+        self._page = self._context.new_page()
+        self._page.set_default_timeout(timeout_ms)
 
     def goto(self, url: str) -> None:
         self._page.goto(url)
@@ -52,7 +69,14 @@ class BrowserUseSession:
 
     def close(self) -> None:
         try:
-            self._bu.close()
+            if self._page:
+                self._page.close()
+            if self._context:
+                self._context.close()
+            if self._browser:
+                self._browser.close()
+            if self._playwright:
+                self._playwright.stop()
         except Exception as e:
             # Silently ignore close errors as browser may already be closed
             _ = e
@@ -260,16 +284,10 @@ Instructions:
                     print(f"[Browser-Use] Got structured output: {data}")
             except Exception as e:
                 print(f"[Browser-Use] Failed to extract structured output: {e}")
-        if (
-            data is None
-            and hasattr(agent, "history")
-            and hasattr(agent.history, "final_result")
-        ):
+        if data is None and hasattr(agent, "history") and hasattr(agent.history, "final_result"):
             final_text = agent.history.final_result()
             if isinstance(final_text, str) and final_text.strip():
-                print(
-                    f"[Browser-Use] Extracting from final result text ({len(final_text)} chars)"
-                )
+                print(f"[Browser-Use] Extracting from final result text ({len(final_text)} chars)")
                 from ..core.extractor.llm_extract import extract_from_text  # type: ignore
 
                 data = extract_from_text(
