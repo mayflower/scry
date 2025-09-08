@@ -1,0 +1,68 @@
+services:
+  redis:
+    image: redis:7-alpine
+  api:
+    build:
+      context: ../..
+      dockerfile: docker/api/Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./.env
+    environment:
+      - HEADLESS=true
+      - ARTIFACTS_ROOT=/app/artifacts
+      - SCREENSHOT_DIR=/app/artifacts/screenshots
+      - GENERATED_CODE_DIR=/app/artifacts/generated_code
+      - HTML_SNAPSHOTS_DIR=/app/artifacts/html
+      - EVENT_BACKEND=redis
+      - REDIS_URL=redis://redis:6379/0
+      - NAV_BACKEND=browser_use
+      - BROWSER_USE_MAX_STEPS=25
+      - BROWSER_USE_VISION=true
+      - BROWSER_USE_STEP_TIMEOUT=300
+    volumes:
+      - ../../artifacts:/app/artifacts
+    shm_size: '1gb'
+    depends_on:
+      - redis
+    restart: unless-stopped
+  worker:
+    build:
+      context: ../..
+      dockerfile: docker/worker/Dockerfile
+    env_file:
+      - ./.env
+    environment:
+      - HEADLESS=true
+      - ARTIFACTS_ROOT=/app/artifacts
+      - SCREENSHOT_DIR=/app/artifacts/screenshots
+      - GENERATED_CODE_DIR=/app/artifacts/generated_code
+      - HTML_SNAPSHOTS_DIR=/app/artifacts/html
+      - EVENT_BACKEND=redis
+      - REDIS_URL=redis://redis:6379/0
+      - NAV_BACKEND=browser_use
+      - BROWSER_USE_MAX_STEPS=25
+      - BROWSER_USE_VISION=true
+      - BROWSER_USE_STEP_TIMEOUT=300
+    volumes:
+      - ../../artifacts:/app/artifacts
+    shm_size: '1gb'
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  tests:
+    build:
+      context: ../..
+      dockerfile: docker/api/Dockerfile
+    env_file:
+      - ./.env
+    environment:
+      - SMARTR_BASE_URL=http://api:8000
+    depends_on:
+      - api
+    shm_size: '1gb'
+    entrypoint: ["/bin/sh","-lc","for i in $(seq 1 120); do curl -sf http://api:8000/healthz && break; sleep 0.5; done; python scripts/one_shot_free_places.py"]
+
+# V3: api + worker + redis

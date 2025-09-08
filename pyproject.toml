@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=67", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "universal-scraper"
+version = "0.1.0"
+description = "Agentic universal scraper (V1 minimal)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.24",
+  "pydantic>=2.6",
+  "playwright>=1.43",
+  "beautifulsoup4>=4.12",
+  "redis>=5",
+  "jsonschema>=4.22",
+  "anthropic>=0.29",
+]
+
+[project.optional-dependencies]
+browser = [
+  "browser-use>=0.1",  # adjust to the version you use in your infra
+]
+
+[project.scripts]
+universal-scraper-api = "universal_scraper.app:app"
+
+[tool.uvicorn]
+factory = true
