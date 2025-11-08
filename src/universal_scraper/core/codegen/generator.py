@@ -281,8 +281,10 @@ def generate_script(
     steps_code = _render_steps(
         plan, handle_cookie_banner=bool(options.get("handle_cookie_banner", False))
     )
-    # Properly serialize the extraction_spec to avoid quote issues
-    extraction_spec = json.dumps(options.get("extraction_spec", {}))
+    # Properly serialize the extraction_spec and escape backslashes for embedding in Python string
+    extraction_spec = json.dumps(options.get("extraction_spec", {})).replace(
+        "\\", "\\\\"
+    )
 
     script = TEMPLATE.format(
         artifacts_root=str(artifacts_root),
