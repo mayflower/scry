@@ -10,5 +10,5 @@ def pytest_sessionstart(session):
     if str(src) not in sys.path:
         sys.path.insert(0, str(src))
     os.environ.setdefault("HEADLESS", "true")
-    # Default to browser_use exploration
-    os.environ.setdefault("NAV_BACKEND", "browser_use")
+    # Default to native playwright exploration
+    os.environ.setdefault("NAV_BACKEND", "playwright")

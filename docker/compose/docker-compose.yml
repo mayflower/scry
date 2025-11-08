@@ -17,12 +17,11 @@ services:
       - HTML_SNAPSHOTS_DIR=/app/artifacts/html
       - EVENT_BACKEND=redis
       - REDIS_URL=redis://redis:6379/0
-      - NAV_BACKEND=browser_use
-      - BROWSER_USE_MAX_STEPS=25
-      - BROWSER_USE_VISION=true
-      - BROWSER_USE_STEP_TIMEOUT=300
+      - NAV_BACKEND=playwright
+      - MAX_EXPLORATION_STEPS=25
     volumes:
       - ../../artifacts:/app/artifacts
+      - ../../tests:/app/tests
     shm_size: '1gb'
     depends_on:
       - redis
@@ -41,12 +40,11 @@ services:
       - HTML_SNAPSHOTS_DIR=/app/artifacts/html
       - EVENT_BACKEND=redis
       - REDIS_URL=redis://redis:6379/0
-      - NAV_BACKEND=browser_use
-      - BROWSER_USE_MAX_STEPS=25
-      - BROWSER_USE_VISION=true
-      - BROWSER_USE_STEP_TIMEOUT=300
+      - NAV_BACKEND=playwright
+      - MAX_EXPLORATION_STEPS=25
     volumes:
       - ../../artifacts:/app/artifacts
+      - ../../tests:/app/tests
     shm_size: '1gb'
     depends_on:
       - redis

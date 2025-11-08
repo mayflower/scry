@@ -1,4 +1,4 @@
-"""Test browser-use with realistic multi-step navigation scenarios."""
+"""Test native Playwright exploration with realistic multi-step navigation scenarios."""
 
 from __future__ import annotations
 
@@ -6,13 +6,13 @@ import os
 
 import pytest
 from universal_scraper.api.dto import ScrapeRequest
-from universal_scraper.core.executor.runner import run_v4_job
+from universal_scraper.core.executor.runner import run_job
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY")
-def test_browser_use_multi_step_navigation():
-    """Test browser-use with a complex navigation scenario requiring at least 5 steps.
+def test_native_exploration_multi_step_navigation():
+    """Test native exploration with a complex navigation scenario requiring at least 5 steps.
 
     This test creates a multi-page HTML structure that requires:
     1. Navigate to the main page
@@ -101,7 +101,7 @@ def test_browser_use_multi_step_navigation():
         target_urls=[test_url],
     )
 
-    res = run_v4_job(req)
+    res = run_job(req)
 
     # Verify the job completed
     assert res.job_id
@@ -111,15 +111,15 @@ def test_browser_use_multi_step_navigation():
     assert isinstance(res.data, dict)
 
     # The actual extraction might not work perfectly with data URLs,
-    # but we're testing that browser-use attempts multiple navigation steps
+    # but we're testing that native exploration attempts multiple navigation steps
     print(f"Execution log: {res.execution_log}")
     print(f"Data extracted: {res.data}")
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY")
-def test_browser_use_form_interaction():
-    """Test browser-use with form filling and submission requiring multiple steps.
+def test_native_exploration_form_interaction():
+    """Test native exploration with form filling and submission requiring multiple steps.
 
     This test requires:
     1. Navigate to the page
@@ -205,7 +205,7 @@ def test_browser_use_form_interaction():
         target_urls=[test_url],
     )
 
-    res = run_v4_job(req)
+    res = run_job(req)
 
     # Verify the job completed
     assert res.job_id

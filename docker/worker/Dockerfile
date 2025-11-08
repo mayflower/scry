@@ -13,7 +13,6 @@ COPY pyproject.toml README.md ./
 COPY src ./src
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir . && \
-    pip install --no-cache-dir 'browser-use @ git+https://github.com/browser-use/browser-use.git@main' && \
     python -m playwright install chromium
 
 ENV HEADLESS=true \
@@ -23,7 +22,7 @@ ENV HEADLESS=true \
     HTML_SNAPSHOTS_DIR=/app/artifacts/html \
     EVENT_BACKEND=redis \
     REDIS_URL=redis://redis:6379/0 \
-    NAV_BACKEND=browser_use \
+    NAV_BACKEND=playwright \
     CDP_URL=http://127.0.0.1:9222
 
 VOLUME ["/app/artifacts"]

@@ -20,8 +20,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-browser = [
-  "browser-use>=0.1",  # adjust to the version you use in your infra
+dev = [
+  "pytest>=7.0",
+  "pytest-asyncio>=0.21",
 ]
 
 [project.scripts]

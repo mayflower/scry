@@ -13,9 +13,10 @@ RUN apt-get update && apt-get install -y wget gnupg ca-certificates && \
 COPY pyproject.toml README.md ./
 COPY src ./src
 COPY scripts ./scripts
+COPY tests ./tests
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir . && \
-    pip install --no-cache-dir 'browser-use @ git+https://github.com/browser-use/browser-use.git@main' && \
+    pip install --no-cache-dir pytest pytest-asyncio && \
     python -m playwright install chromium
 
 EXPOSE 8000
@@ -27,7 +28,7 @@ ENV HEADLESS=true \
     HTML_SNAPSHOTS_DIR=/app/artifacts/html \
     EVENT_BACKEND=redis \
     REDIS_URL=redis://redis:6379/0 \
-    NAV_BACKEND=browser_use
+    NAV_BACKEND=playwright
 
 ENV CDP_URL=http://127.0.0.1:9222
 CMD ["/bin/sh","-lc","/usr/bin/google-chrome-stable --headless=new --no-sandbox --disable-dev-shm-usage --disable-gpu --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 >/tmp/chrome.log 2>&1 & exec uvicorn universal_scraper.app:create_app --factory --host 0.0.0.0 --port 8000"]

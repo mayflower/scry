@@ -13,7 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ..ir.model import Click, Fill, Navigate, ScrapePlan, WaitFor
+from ..ir.model import Click, Fill, Navigate, ScrapePlan, Validate, WaitFor
 
 
 TEMPLATE = """#!/usr/bin/env python3
@@ -107,7 +107,9 @@ def _render_steps(plan: ScrapePlan, handle_cookie_banner: bool) -> str:
                 f'            page.screenshot(path=str(screens_dir / "step-{index}-click.png"), full_page=True)'
             )
             lines.append("        except Exception as e:")
-            lines.append('            print(f"Failed to click {step.selector}: {e}")')
+            lines.append(
+                f'            print(f"Failed to click {step.selector}: {{e}}")'
+            )
 
         elif isinstance(step, Fill):
             lines.append(f"        # Step {index}: Fill {step.selector} with text")
@@ -132,45 +134,134 @@ def _render_steps(plan: ScrapePlan, handle_cookie_banner: bool) -> str:
             }
             state = state_map.get(step.state, "visible")
             lines.append(
-                f'            page.locator("{step.selector}").wait_for(state="{state}", timeout=10000)'
+                f'            page.locator("{step.selector}").first.wait_for(state="{state}", timeout=10000)'
             )
             lines.append("        except Exception as e:")
+            lines.append('            print(f"Timeout waiting for selector: {e}")')
+
+        elif isinstance(step, Validate):
             lines.append(
-                '            print(f"Timeout waiting for {step.selector}: {e}")'
+                f"        # Step {index}: Validate {step.description or step.selector}"
             )
-    # Extraction block
+            lines.append("        try:")
+            lines.append(f'            element = page.locator("{step.selector}")')
+
+            if step.validation_type == "presence":
+                lines.append("            if not element.is_visible(timeout=5000):")
+                lines.append(
+                    f'                raise Exception("Validation failed: element not found - {step.description}")'
+                )
+            elif step.validation_type == "absence":
+                lines.append("            if element.is_visible(timeout=1000):")
+                lines.append(
+                    f'                raise Exception("Validation failed: element should not be present - {step.description}")'
+                )
+            elif step.validation_type == "text" and step.expected_text:
+                lines.append("            actual_text = element.text_content()")
+                lines.append(
+                    f'            if "{step.expected_text}" not in actual_text:'
+                )
+                lines.append(
+                    f'                raise Exception("Validation failed: text mismatch - {step.description}")'
+                )
+            elif step.validation_type == "count" and step.expected_count:
+                lines.append(
+                    f"            if element.count() != {step.expected_count}:"
+                )
+                lines.append(
+                    f'                raise Exception("Validation failed: count mismatch - {step.description}")'
+                )
+
+            lines.append(f'            print("Validation passed: {step.description}")')
+            lines.append("        except Exception as e:")
+            if step.is_critical:
+                lines.append('            print(f"CRITICAL validation failed: {e}")')
+                lines.append("            import sys")
+                lines.append("            sys.exit(1)  # Exit for self-healing")
+            else:
+                lines.append(
+                    '            print(f"Non-critical validation failed: {e}")'
+                )
+    # Extraction block - handles both simple and array extraction
     lines.append("        # Extraction per spec")
     lines.append("        result = {}")
     lines.append("        for field, spec in EXTRACTION_SPEC.items():")
-    lines.append("            sel = spec.get('selector')")
-    lines.append("            if not sel: continue")
-    lines.append("            try:")
-    lines.append("                text = page.locator(sel).first.text_content()")
-    lines.append("                if text:")
-    lines.append("                    text = text.strip()")
-    lines.append("                else:")
+    lines.append("            if isinstance(spec, dict) and 'fields' in spec:")
+    lines.append("                # Array extraction with nested fields")
+    lines.append("                parent_sel = spec.get('selector')")
+    lines.append("                fields_spec = spec.get('fields', {})")
+    lines.append("                limit = spec.get('limit', 10)")
+    lines.append("                items = []")
+    lines.append("                try:")
+    lines.append(
+        "                    elements = page.locator(parent_sel).all()[:limit]"
+    )
+    lines.append("                    for elem in elements:")
+    lines.append("                        item = {}")
+    lines.append(
+        "                        for sub_field, sub_spec in fields_spec.items():"
+    )
+    lines.append("                            sub_sel = sub_spec.get('selector', '')")
+    lines.append("                            attr = sub_spec.get('attribute')")
+    lines.append("                            try:")
+    lines.append(
+        "                                sub_elem = elem.locator(sub_sel).first"
+    )
+    lines.append("                                if attr:")
+    lines.append(
+        "                                    value = sub_elem.get_attribute(attr)"
+    )
+    lines.append("                                else:")
+    lines.append("                                    value = sub_elem.text_content()")
+    lines.append("                                if value:")
+    lines.append("                                    item[sub_field] = value.strip()")
+    lines.append("                            except Exception:")
+    lines.append("                                pass")
+    lines.append("                        if item:")
+    lines.append("                            items.append(item)")
+    lines.append("                    result[field] = items")
+    lines.append("                except Exception as e:")
+    lines.append(
+        "                    print(f'Array extraction failed for {field}: {e}')"
+    )
+    lines.append("                    result[field] = []")
+    lines.append("            else:")
+    lines.append("                # Simple field extraction")
+    lines.append(
+        "                sel = spec.get('selector') if isinstance(spec, dict) else None"
+    )
+    lines.append("                if not sel: continue")
+    lines.append("                try:")
+    lines.append("                    text = page.locator(sel).first.text_content()")
+    lines.append("                    if text:")
+    lines.append("                        text = text.strip()")
+    lines.append("                    else:")
+    lines.append("                        text = ''")
+    lines.append("                except Exception:")
     lines.append("                    text = ''")
-    lines.append("            except Exception:")
-    lines.append("                text = ''")
-    lines.append("            rx = spec.get('regex')")
-    lines.append("            if rx:")
-    lines.append("                import re")
-    lines.append("                m = re.search(rx, text)")
-    lines.append("                if m:")
-    lines.append("                    text = m.group(1) if m.groups() else m.group(0)")
-    lines.append("            # Attempt number cast")
-    lines.append("            try:")
     lines.append(
-        "                if text and all(c.isdigit() or c in ',. ' for c in text):"
+        "                rx = spec.get('regex') if isinstance(spec, dict) else None"
+    )
+    lines.append("                if rx:")
+    lines.append("                    import re")
+    lines.append("                    m = re.search(rx, text)")
+    lines.append("                    if m:")
+    lines.append(
+        "                        text = m.group(1) if m.groups() else m.group(0)"
+    )
+    lines.append("                # Attempt number cast")
+    lines.append("                try:")
+    lines.append(
+        "                    if text and all(c.isdigit() or c in ',. ' for c in text):"
     )
     lines.append(
-        "                    num = int(''.join([c for c in text if c.isdigit()]))"
+        "                        num = int(''.join([c for c in text if c.isdigit()]))"
     )
-    lines.append("                    result[field] = num")
-    lines.append("                else:")
+    lines.append("                        result[field] = num")
+    lines.append("                    else:")
+    lines.append("                        result[field] = text")
+    lines.append("                except Exception:")
     lines.append("                    result[field] = text")
-    lines.append("            except Exception:")
-    lines.append("                result[field] = text")
     lines.append(
         "        (data_dir / f\"{JOB_ID}.json\").write_text(__import__('json').dumps(result), encoding='utf-8')"
     )
