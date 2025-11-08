@@ -169,9 +169,24 @@ def run_job_with_id(job_id: str, req: ScrapeRequest) -> ScrapeResponse:
         data = _finalize_from_artifacts(job_id, req)
 
     # If generated script extracted nothing but exploration got data, use exploration data
-    if (
-        not data or data == {} or all(not v for v in data.values())
-    ) and exploration_data:
+    # Check if the primary schema fields are empty (especially arrays)
+    schema_empty = False
+    if data and req.output_schema:
+        # Check if array fields in schema are empty
+        props = req.output_schema.get("properties", {})
+        for key, spec in props.items():
+            if spec.get("type") == "array":
+                # For array fields, check if empty or missing
+                value = data.get(key)
+                if not value or (isinstance(value, list) and len(value) == 0):
+                    schema_empty = True
+                    break
+                if isinstance(value, str) and not value.strip():
+                    # Empty string instead of array
+                    schema_empty = True
+                    break
+
+    if (not data or data == {} or schema_empty) and exploration_data:
         execution_log.append("using_exploration_data")
         data = exploration_data
 

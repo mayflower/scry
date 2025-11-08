@@ -19,57 +19,102 @@ from .anthropic import complete_json, has_api_key
 
 
 def _get_page_state(page: Page) -> dict[str, Any]:
-    """Extract relevant page state for LLM decision-making."""
+    """Extract relevant page state for LLM decision-making.
+
+    Scans both the main page and all iframes to find interactive elements,
+    which is crucial for handling cookie consent dialogs that often live in iframes.
+    """
     try:
         # Get basic page info
         title = page.title()
         url = page.url
 
-        # Get interactive elements (simplified DOM)
-        elements = page.evaluate("""() => {
-            const getSelector = (el) => {
-                if (el.id) return '#' + el.id;
-                if (el.className && typeof el.className === 'string') {
-                    const classes = el.className.trim().split(/\\s+/).slice(0, 2).join('.');
-                    if (classes) return el.tagName.toLowerCase() + '.' + classes;
-                }
-                return el.tagName.toLowerCase();
-            };
+        # Extract elements from a frame
+        def extract_frame_elements(frame, frame_idx=0):
+            """Extract interactive elements from a frame."""
+            try:
+                return frame.evaluate("""() => {
+                    const getSelector = (el) => {
+                        if (el.id) return '#' + el.id;
+                        if (el.className && typeof el.className === 'string') {
+                            const classes = el.className.trim().split(/\\s+/).slice(0, 2).join('.');
+                            if (classes) return el.tagName.toLowerCase() + '.' + classes;
+                        }
+                        return el.tagName.toLowerCase();
+                    };
 
-            const elements = [];
-            // Get clickable elements
-            document.querySelectorAll('a, button, [role="button"], [onclick]').forEach((el, idx) => {
-                if (idx < 50 && el.offsetParent !== null) {  // Visible elements only, limit to 50
-                    elements.push({
-                        type: 'clickable',
-                        selector: getSelector(el),
-                        text: el.textContent?.trim().substring(0, 100) || '',
-                        tag: el.tagName.toLowerCase()
+                    const elements = [];
+                    // Get clickable elements
+                    document.querySelectorAll('a, button, [role="button"], [onclick], input[type="button"], input[type="submit"]').forEach((el, idx) => {
+                        if (idx < 50 && el.offsetParent !== null) {  // Visible elements only, limit to 50
+                            elements.push({
+                                type: 'clickable',
+                                selector: getSelector(el),
+                                text: el.textContent?.trim().substring(0, 100) || el.value || '',
+                                tag: el.tagName.toLowerCase()
+                            });
+                        }
                     });
-                }
-            });
 
-            // Get input fields
-            document.querySelectorAll('input, textarea, select').forEach((el, idx) => {
-                if (idx < 20 && el.offsetParent !== null) {  // Limit to 20
-                    elements.push({
-                        type: 'input',
-                        selector: getSelector(el),
-                        placeholder: el.placeholder || '',
-                        inputType: el.type || 'text'
+                    // Get input fields
+                    document.querySelectorAll('input:not([type="button"]):not([type="submit"]), textarea, select').forEach((el, idx) => {
+                        if (idx < 20 && el.offsetParent !== null) {  // Limit to 20
+                            elements.push({
+                                type: 'input',
+                                selector: getSelector(el),
+                                placeholder: el.placeholder || '',
+                                inputType: el.type || 'text'
+                            });
+                        }
                     });
-                }
-            });
 
-            return elements;
-        }""")
+                    return elements;
+                }""")
+            except Exception:
+                return []
 
-        # Get visible text content (first 3000 chars)
+        # Collect elements from main frame and all iframes
+        all_elements = []
+
+        # Main frame (frame_idx=0)
+        main_elements = extract_frame_elements(page.main_frame, 0)
+        for elem in main_elements:
+            elem["frame"] = 0
+        all_elements.extend(main_elements)
+
+        # Scan all iframes for consent dialogs
+        frames = page.frames
+        for idx, frame in enumerate(
+            frames[1:], start=1
+        ):  # Skip main frame (already done)
+            try:
+                frame_url = frame.url
+                # Only scan frames that might contain consent dialogs
+                if frame_url and frame_url != "about:blank":
+                    iframe_elements = extract_frame_elements(frame, idx)
+                    for elem in iframe_elements:
+                        elem["frame"] = idx
+                        elem["frame_url"] = frame_url[:80]  # Truncate for display
+                    all_elements.extend(iframe_elements)
+                    print(
+                        f"[Explorer] Scanned iframe {idx}: {frame_url[:80]} - found {len(iframe_elements)} elements"
+                    )
+            except Exception as e:
+                print(f"[Explorer] Failed to scan iframe {idx}: {e}")
+                continue
+
+        # Get visible text content (first 3000 chars) from main frame
         text_content = page.evaluate("() => document.body.innerText")
         if isinstance(text_content, str):
             text_content = text_content[:3000]
 
-        return {"title": title, "url": url, "elements": elements, "text": text_content}
+        return {
+            "title": title,
+            "url": url,
+            "elements": all_elements,
+            "text": text_content,
+            "frames_scanned": len(frames),
+        }
     except Exception as e:
         return {
             "title": "",
@@ -101,10 +146,17 @@ def _decide_next_action(
 
 Available actions:
 - navigate: {"action": "navigate", "url": "https://..."}
-- click: {"action": "click", "selector": "button.submit"}
+- click: {"action": "click", "selector": "button.submit", "frame": 0}
 - fill: {"action": "fill", "selector": "input#search", "text": "search term"}
 - extract: {"action": "extract"} - when you've found the data
 - done: {"action": "done"} - when task is complete or stuck
+
+IMPORTANT PRIORITY RULES:
+1. **Cookie/Consent Banners**: If you see buttons with text like "Accept", "Zustimmen", "Agree", "OK",
+   "Alle akzeptieren", "Einverstanden" in ANY frame, click them IMMEDIATELY before doing anything else.
+   Cookie banners block content and must be dismissed first.
+2. Elements may be in iframes (frame > 0). Include the "frame" number when clicking iframe elements.
+3. After dismissing cookie banners, proceed with the actual task.
 
 Return ONLY a JSON object with the action. Be efficient and goal-directed."""
 
@@ -209,6 +261,9 @@ def explore_with_playwright(
             actions.append(Navigate(url=start_url))
             urls.append(start_url)
 
+            # Wait for dynamic content and iframes to load
+            page.wait_for_timeout(2000)
+
             # Capture initial state
             screenshot_path = screenshots_dir / f"exploration-step-0-{job_id}.png"
             screenshot_path.parent.mkdir(parents=True, exist_ok=True)
@@ -254,10 +309,25 @@ def explore_with_playwright(
 
                     elif action_type == "click":
                         selector = action.get("selector", "")
+                        frame_idx = action.get("frame", 0)
                         if selector:
-                            page.click(selector, timeout=5000)
+                            # Click in the appropriate frame
+                            if frame_idx == 0:
+                                # Main frame
+                                page.click(selector, timeout=5000)
+                            else:
+                                # Iframe - get the frame by index
+                                frames = page.frames
+                                if 0 <= frame_idx < len(frames):
+                                    frames[frame_idx].click(selector, timeout=5000)
+                                    print(f"[Explorer] Clicked in iframe {frame_idx}")
+                                else:
+                                    print(
+                                        f"[Explorer] Invalid frame index: {frame_idx}"
+                                    )
+                                    continue
                             actions.append(Click(selector=selector))
-                            page.wait_for_load_state("domcontentloaded")
+                            page.wait_for_load_state("domcontentloaded", timeout=5000)
 
                     elif action_type == "fill":
                         selector = action.get("selector", "")
