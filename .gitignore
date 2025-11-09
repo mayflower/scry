@@ -181,6 +181,8 @@ data/
 *.bak
 *.backup
 *.orig
+ANALYSIS_V1_V3.md
+IMPLEMENTATION_STATUS.md
 
 # Browser automation
 .browser/
