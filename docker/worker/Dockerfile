@@ -27,4 +27,4 @@ ENV HEADLESS=true \
 
 VOLUME ["/app/artifacts"]
 
-CMD ["/bin/sh","-lc","/usr/bin/google-chrome-stable --headless=new --no-sandbox --disable-dev-shm-usage --disable-gpu --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 >/tmp/chrome.log 2>&1 & exec python -m universal_scraper.worker"]
+CMD ["/bin/sh","-lc","/usr/bin/google-chrome-stable --headless=new --no-sandbox --disable-dev-shm-usage --disable-gpu --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 >/tmp/chrome.log 2>&1 & exec python -m scry.worker"]

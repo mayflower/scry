@@ -3,8 +3,8 @@
 import os
 
 import pytest
-from universal_scraper.api.dto import ScrapeRequest  # type: ignore
-from universal_scraper.core.executor.runner import run_job_with_id  # type: ignore
+from scry.api.dto import ScrapeRequest  # type: ignore
+from scry.core.executor.runner import run_job_with_id  # type: ignore
 
 
 @pytest.mark.integration

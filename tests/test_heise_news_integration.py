@@ -10,8 +10,8 @@ This tests the complete pipeline with:
 import os
 
 import pytest
-from universal_scraper.api.dto import ScrapeRequest
-from universal_scraper.core.executor.runner import run_job_with_id
+from scry.api.dto import ScrapeRequest
+from scry.core.executor.runner import run_job_with_id
 
 
 @pytest.mark.integration

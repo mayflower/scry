@@ -3,8 +3,8 @@
 import os
 
 import pytest
-from universal_scraper.api.dto import ScrapeRequest
-from universal_scraper.core.executor.runner import run_job_with_id
+from scry.api.dto import ScrapeRequest
+from scry.core.executor.runner import run_job_with_id
 
 
 @pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY")

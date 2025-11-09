@@ -15,18 +15,18 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from universal_scraper.api.dto import ScrapeRequest
-from universal_scraper.core.codegen.generator import generate_script
-from universal_scraper.core.executor.runner import run_job_with_id
-from universal_scraper.core.ir.model import (
+from scry.api.dto import ScrapeRequest
+from scry.core.codegen.generator import generate_script
+from scry.core.executor.runner import run_job_with_id
+from scry.core.ir.model import (
     Click,
     Fill,
     Navigate,
     ScrapePlan,
     Validate,
 )
-from universal_scraper.core.nav.explore import ExplorationResult
-from universal_scraper.core.optimizer.optimize import optimize_plan
+from scry.core.nav.explore import ExplorationResult
+from scry.core.optimizer.optimize import optimize_plan
 
 
 class TestValidateIRModel:
@@ -430,7 +430,7 @@ class TestValidationInRunner:
         )
 
         with patch(
-            "universal_scraper.adapters.playwright_explorer.explore_with_playwright"
+            "scry.adapters.playwright_explorer.explore_with_playwright"
         ) as mock_explore:
             # Mock exploration result
             mock_explore.return_value = ExplorationResult(
@@ -442,7 +442,7 @@ class TestValidationInRunner:
             )
 
             with patch(
-                "universal_scraper.core.executor.runner.propose_patch"
+                "scry.core.executor.runner.propose_patch"
             ) as mock_patch:
                 mock_patch.return_value = {"extra_wait_ms": 1000}
 
@@ -475,7 +475,7 @@ class TestValidationInRunner:
         )
 
         with patch(
-            "universal_scraper.adapters.playwright_explorer.explore_with_playwright"
+            "scry.adapters.playwright_explorer.explore_with_playwright"
         ) as mock_explore:
             mock_explore.return_value = ExplorationResult(
                 steps=[Navigate(url="https://example.com")],

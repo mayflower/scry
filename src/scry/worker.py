@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 import os
 
-from .runtime.events import get_bus
 from .api.dto import ScrapeRequest
-from .core.executor.runner import run_v4_job_with_id, run_v4_job
+from .core.executor.runner import run_job, run_job_with_id
+from .runtime.events import get_bus
 
 
 def _worker_loop() -> None:
@@ -17,7 +17,7 @@ def _worker_loop() -> None:
         try:
             job_id = msg.get("job_id")
             req = ScrapeRequest(**msg["request"])  # type: ignore[index]
-            result = run_v4_job_with_id(job_id, req) if job_id else run_v4_job(req)
+            result = run_job_with_id(job_id, req) if job_id else run_job(req)
             bus.set_result(result.job_id, json.loads(result.model_dump_json()))
         except Exception:
             # Swallow and continue (no logs per constraints)

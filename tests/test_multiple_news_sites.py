@@ -7,8 +7,8 @@ is not overfitted to a single domain.
 import os
 
 import pytest
-from universal_scraper.api.dto import ScrapeRequest  # type: ignore[import-untyped]
-from universal_scraper.core.executor.runner import run_job_with_id  # type: ignore[import-untyped]
+from scry.api.dto import ScrapeRequest  # type: ignore[import-untyped]
+from scry.core.executor.runner import run_job_with_id  # type: ignore[import-untyped]
 
 
 @pytest.mark.integration

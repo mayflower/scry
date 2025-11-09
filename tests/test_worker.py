@@ -7,9 +7,9 @@ import time
 from unittest.mock import MagicMock, patch
 
 import pytest
-from universal_scraper.api.dto import ScrapeRequest, ScrapeResponse
-from universal_scraper.runtime.events import InMemoryBus
-from universal_scraper.worker import _worker_loop, main
+from scry.api.dto import ScrapeRequest, ScrapeResponse
+from scry.runtime.events import InMemoryBus
+from scry.worker import _worker_loop, main
 
 
 class TestWorker:
@@ -30,8 +30,8 @@ class TestWorker:
         }
         bus.enqueue(job_data)
 
-        with patch("universal_scraper.worker.get_bus", return_value=bus):
-            with patch("universal_scraper.worker.run_job_with_id") as mock_run:
+        with patch("scry.worker.get_bus", return_value=bus):
+            with patch("scry.worker.run_job_with_id") as mock_run:
                 mock_run.return_value = ScrapeResponse(
                     job_id="test-123",
                     status="completed",
@@ -64,7 +64,7 @@ class TestWorker:
         invalid_job = {"invalid": "data"}
         bus.enqueue(invalid_job)
 
-        with patch("universal_scraper.worker.get_bus", return_value=bus):
+        with patch("scry.worker.get_bus", return_value=bus):
             with patch.object(bus, "dequeue") as mock_dequeue:
                 mock_dequeue.side_effect = [invalid_job, None, KeyboardInterrupt()]
 
@@ -91,8 +91,8 @@ class TestWorker:
         }
         bus.enqueue(job_data)
 
-        with patch("universal_scraper.worker.get_bus", return_value=bus):
-            with patch("universal_scraper.worker.run_job_with_id") as mock_run:
+        with patch("scry.worker.get_bus", return_value=bus):
+            with patch("scry.worker.run_job_with_id") as mock_run:
                 mock_run.side_effect = Exception("Execution failed")
 
                 with patch.object(bus, "dequeue") as mock_dequeue:
@@ -111,7 +111,7 @@ class TestWorker:
         """Test worker handles queue timeout properly."""
         bus = InMemoryBus()
 
-        with patch("universal_scraper.worker.get_bus", return_value=bus):
+        with patch("scry.worker.get_bus", return_value=bus):
             call_count = 0
 
             def dequeue_with_timeout(*args, **kwargs):
@@ -146,9 +146,9 @@ class TestWorker:
         }
         bus.enqueue(job_with_id)
 
-        with patch("universal_scraper.worker.get_bus", return_value=bus):
-            with patch("universal_scraper.worker.run_job_with_id") as mock_with_id:
-                with patch("universal_scraper.worker.run_job") as mock_without_id:
+        with patch("scry.worker.get_bus", return_value=bus):
+            with patch("scry.worker.run_job_with_id") as mock_with_id:
+                with patch("scry.worker.run_job") as mock_without_id:
                     mock_with_id.return_value = ScrapeResponse(
                         job_id="specific-id",
                         status="completed",
@@ -186,8 +186,8 @@ class TestWorker:
         }
         bus.enqueue(job_without_id)
 
-        with patch("universal_scraper.worker.get_bus", return_value=bus):
-            with patch("universal_scraper.worker.run_job") as mock_run:
+        with patch("scry.worker.get_bus", return_value=bus):
+            with patch("scry.worker.run_job") as mock_run:
                 mock_run.return_value = ScrapeResponse(
                     job_id="auto-generated",
                     status="completed",
@@ -221,7 +221,7 @@ class TestWorker:
                 # Exit immediately
                 return
 
-            with patch("universal_scraper.worker._worker_loop", side_effect=mock_worker_loop):
+            with patch("scry.worker._worker_loop", side_effect=mock_worker_loop):
                 # Start main in a thread
                 main_thread = threading.Thread(target=main, daemon=True)
                 main_thread.start()
@@ -265,8 +265,8 @@ class TestWorker:
         }
         bus.enqueue(job_data)
 
-        with patch("universal_scraper.worker.get_bus", return_value=bus):
-            with patch("universal_scraper.worker.run_job_with_id") as mock_run:
+        with patch("scry.worker.get_bus", return_value=bus):
+            with patch("scry.worker.run_job_with_id") as mock_run:
                 # Return response with complex data
                 mock_run.return_value = ScrapeResponse(
                     job_id="serialize-test",

@@ -17,7 +17,7 @@ except ImportError:
 
 
 BASE_URL = os.getenv("SMARTR_BASE_URL", "http://127.0.0.1:8000")
-TIMEOUT = int(os.getenv("SMARTR_TIMEOUT", "180"))
+TIMEOUT = int(os.getenv("SMARTR_TIMEOUT", "300"))
 
 
 def post_json(path: str, payload: dict[str, Any]) -> requests.Response:

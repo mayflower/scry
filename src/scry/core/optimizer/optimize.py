@@ -50,6 +50,15 @@ def optimize_plan(plan: ScrapePlan) -> ScrapePlan:
                 optimized_steps[-1].state = "visible"
             continue
 
+        # For Validate steps, only keep if they validate real actions
+        from ..ir.model import Validate
+
+        if isinstance(step, Validate):
+            # Only add validation if there's a preceding action to validate
+            if optimized_steps and not isinstance(optimized_steps[-1], Validate):
+                optimized_steps.append(step)
+            continue
+
         # Improve selector if it's a Click or Fill
         if isinstance(step, (Click, Fill)) and step.selector:
             step.selector = _improve_selector(step.selector)
@@ -74,6 +83,8 @@ def _steps_are_equal(step1: Any, step2: Any) -> bool:
         return step1.selector == step2.selector and step1.text == step2.text
     if isinstance(step1, WaitFor):
         return step1.selector == step2.selector and step1.state == step2.state
+    # Note: Validate steps are intentionally not compared for equality
+    # as we want to preserve all validation checkpoints
 
     return False
 
@@ -104,6 +115,8 @@ def compress_min_path_with_anthropic(
 
     # Build a compact representation of the exploration
     steps_repr: list[dict[str, Any]] = []
+    from ..ir.model import Validate
+
     for s in explore.steps:
         if isinstance(s, Navigate):
             steps_repr.append({"type": "navigate", "url": s.url})
@@ -112,7 +125,19 @@ def compress_min_path_with_anthropic(
         elif isinstance(s, Fill):
             steps_repr.append({"type": "fill", "selector": s.selector, "text": s.text})
         elif isinstance(s, WaitFor):
-            steps_repr.append({"type": "wait_for", "selector": s.selector, "state": s.state})
+            steps_repr.append(
+                {"type": "wait_for", "selector": s.selector, "state": s.state}
+            )
+        elif isinstance(s, Validate):
+            steps_repr.append(
+                {
+                    "type": "validate",
+                    "selector": s.selector,
+                    "validation_type": s.validation_type,
+                    "is_critical": s.is_critical,
+                    "description": s.description,
+                }
+            )
 
     sys = (
         "Given an exploration trace (naive actions) and the goal, generate the shortest deterministic plan.\n"
@@ -141,7 +166,9 @@ def compress_min_path_with_anthropic(
             elif t == "click" and s.get("selector"):
                 out_steps.append(Click(selector=str(s["selector"])))
             elif t == "fill" and s.get("selector"):
-                out_steps.append(Fill(selector=str(s["selector"]), text=str(s.get("text", ""))))
+                out_steps.append(
+                    Fill(selector=str(s["selector"]), text=str(s.get("text", "")))
+                )
             elif t in ("wait_for", "wait", "waitfor") and s.get("selector"):
                 out_steps.append(
                     WaitFor(
@@ -150,7 +177,9 @@ def compress_min_path_with_anthropic(
                     )
                 )
         if out_steps:
-            return ScrapePlan(steps=out_steps, notes=str(data.get("notes") or "compressed"))
+            return ScrapePlan(
+                steps=out_steps, notes=str(data.get("notes") or "compressed")
+            )
     except Exception:
         pass
 

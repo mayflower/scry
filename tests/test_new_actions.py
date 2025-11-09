@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 from playwright.sync_api import sync_playwright
-from universal_scraper.api.dto import ScrapeRequest  # type: ignore
-from universal_scraper.core.executor.runner import run_job_with_id  # type: ignore
+from scry.api.dto import ScrapeRequest  # type: ignore
+from scry.core.executor.runner import run_job_with_id  # type: ignore
 
 
 def test_select_action_playwright():

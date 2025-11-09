@@ -5,7 +5,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException
 
-from ..core.executor.runner import run_v4_job
+from ..core.executor.runner import run_job
 from ..runtime.events import get_bus
 from .dto import ScrapeRequest, ScrapeResponse
 
@@ -16,7 +16,7 @@ router = APIRouter()
 @router.post("/scrape", response_model=ScrapeResponse)
 def scrape(req: ScrapeRequest) -> ScrapeResponse:
     try:
-        return run_v4_job(req)
+        return run_job(req)
     except Exception as e:
         # No logging; raise API error with minimal message
         raise HTTPException(status_code=500, detail=str(e))
