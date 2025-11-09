@@ -183,6 +183,8 @@ data/
 *.orig
 ANALYSIS_V1_V3.md
 IMPLEMENTATION_STATUS.md
+completion_plan.md
+plan.md
 
 # Browser automation
 .browser/
