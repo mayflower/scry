@@ -13,7 +13,18 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ..ir.model import Click, Fill, Navigate, ScrapePlan, Validate, WaitFor
+from ..ir.model import (
+    Click,
+    Fill,
+    Hover,
+    KeyPress,
+    Navigate,
+    ScrapePlan,
+    Select,
+    Upload,
+    Validate,
+    WaitFor,
+)
 
 
 TEMPLATE = """#!/usr/bin/env python3
@@ -182,6 +193,60 @@ def _render_steps(plan: ScrapePlan, handle_cookie_banner: bool) -> str:
                 lines.append(
                     '            print(f"Non-critical validation failed: {e}")'
                 )
+
+        elif isinstance(step, Select):
+            lines.append(f"        # Step {index}: Select option in {step.selector}")
+            lines.append("        try:")
+            lines.append(
+                f'            page.locator("{step.selector}").select_option("{step.value}")'
+            )
+            lines.append(
+                f'            page.screenshot(path=str(screens_dir / "step-{index}-select.png"), full_page=True)'
+            )
+            lines.append("        except Exception as e:")
+            lines.append('            print(f"Failed to select option: {e}")')
+
+        elif isinstance(step, Hover):
+            lines.append(f"        # Step {index}: Hover over {step.selector}")
+            lines.append("        try:")
+            lines.append(f'            page.locator("{step.selector}").hover()')
+            lines.append("            page.wait_for_timeout(500)")
+            lines.append(
+                f'            page.screenshot(path=str(screens_dir / "step-{index}-hover.png"), full_page=True)'
+            )
+            lines.append("        except Exception as e:")
+            lines.append('            print(f"Failed to hover: {e}")')
+
+        elif isinstance(step, KeyPress):
+            selector_text = f" on {step.selector}" if step.selector else ""
+            lines.append(
+                f"        # Step {index}: Press key '{step.key}'{selector_text}"
+            )
+            lines.append("        try:")
+            if step.selector:
+                lines.append(
+                    f'            page.locator("{step.selector}").press("{step.key}")'
+                )
+            else:
+                lines.append(f'            page.keyboard.press("{step.key}")')
+            lines.append(
+                f'            page.screenshot(path=str(screens_dir / "step-{index}-keypress.png"), full_page=True)'
+            )
+            lines.append("        except Exception as e:")
+            lines.append('            print(f"Failed to press key: {e}")')
+
+        elif isinstance(step, Upload):
+            lines.append(f"        # Step {index}: Upload file to {step.selector}")
+            lines.append("        try:")
+            lines.append(
+                f'            page.set_input_files("{step.selector}", "{step.file_path}")'
+            )
+            lines.append(
+                f'            page.screenshot(path=str(screens_dir / "step-{index}-upload.png"), full_page=True)'
+            )
+            lines.append("        except Exception as e:")
+            lines.append('            print(f"Failed to upload file: {e}")')
+
     # Extraction block - handles both simple and array extraction
     lines.append("        # Extraction per spec")
     lines.append("        result = {}")

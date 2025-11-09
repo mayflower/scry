@@ -13,7 +13,16 @@ from urllib.parse import urlparse
 
 from playwright.sync_api import Page, sync_playwright
 
-from ..core.ir.model import Click, Fill, Navigate, Validate
+from ..core.ir.model import (
+    Click,
+    Fill,
+    Hover,
+    KeyPress,
+    Navigate,
+    Select,
+    Upload,
+    Validate,
+)
 from ..core.nav.explore import ExplorationResult
 from .anthropic import complete_json, has_api_key
 
@@ -56,14 +65,49 @@ def _get_page_state(page: Page) -> dict[str, Any]:
                         }
                     });
 
-                    // Get input fields
-                    document.querySelectorAll('input:not([type="button"]):not([type="submit"]), textarea, select').forEach((el, idx) => {
+                    // Get input fields with metadata for LLM to recognize login fields
+                    document.querySelectorAll('input:not([type="button"]):not([type="submit"]):not([type="file"]), textarea').forEach((el, idx) => {
                         if (idx < 20 && el.offsetParent !== null) {  // Limit to 20
                             elements.push({
                                 type: 'input',
                                 selector: getSelector(el),
                                 placeholder: el.placeholder || '',
-                                inputType: el.type || 'text'
+                                inputType: el.type || 'text',
+                                name: el.name || '',
+                                id: el.id || '',
+                                autocomplete: el.autocomplete || '',
+                                ariaLabel: el.getAttribute('aria-label') || ''
+                            });
+                        }
+                    });
+
+                    // Get select elements with their options
+                    document.querySelectorAll('select').forEach((el, idx) => {
+                        if (idx < 10 && el.offsetParent !== null) {
+                            const options = Array.from(el.options).slice(0, 5).map(opt => ({
+                                value: opt.value,
+                                text: opt.text
+                            }));
+                            elements.push({
+                                type: 'select',
+                                selector: getSelector(el),
+                                name: el.name || '',
+                                id: el.id || '',
+                                options: options
+                            });
+                        }
+                    });
+
+                    // Get file upload inputs
+                    document.querySelectorAll('input[type="file"]').forEach((el, idx) => {
+                        if (idx < 5 && el.offsetParent !== null) {
+                            elements.push({
+                                type: 'file_upload',
+                                selector: getSelector(el),
+                                accept: el.accept || '',
+                                multiple: el.multiple,
+                                name: el.name || '',
+                                id: el.id || ''
                             });
                         }
                     });
@@ -132,6 +176,7 @@ def _decide_next_action(
     visited_urls: list[str],
     step_num: int,
     max_steps: int,
+    login_params: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Use LLM to decide next action based on page state."""
     if not has_api_key():
@@ -148,6 +193,10 @@ Available actions:
 - navigate: {"action": "navigate", "url": "https://..."}
 - click: {"action": "click", "selector": "button.submit", "frame": 0}
 - fill: {"action": "fill", "selector": "input#search", "text": "search term"}
+- select: {"action": "select", "selector": "select#country", "value": "USA"}
+- hover: {"action": "hover", "selector": ".menu-item"}
+- keypress: {"action": "keypress", "key": "Enter", "selector": "input#search"}
+- upload: {"action": "upload", "selector": "input[type='file']", "file_path": "/tmp/file.pdf"}
 - extract: {"action": "extract"} - when you've found the data
 - done: {"action": "done"} - when task is complete or stuck
 
@@ -155,10 +204,21 @@ IMPORTANT PRIORITY RULES:
 1. **Cookie/Consent Banners**: If you see buttons with text like "Accept", "Zustimmen", "Agree", "OK",
    "Alle akzeptieren", "Einverstanden" in ANY frame, click them IMMEDIATELY before doing anything else.
    Cookie banners block content and must be dismissed first.
-2. Elements may be in iframes (frame > 0). Include the "frame" number when clicking iframe elements.
-3. After dismissing cookie banners, proceed with the actual task.
+2. **Login Forms**: If you detect a login/signin form (look for password input fields, username/email fields,
+   login/signin buttons) and credentials are available, fill and submit the form BEFORE proceeding with the main task.
+   Typical login indicators:
+   - Input with inputType="password"
+   - Input with name/id/autocomplete containing "user", "email", "login", "username"
+   - Buttons with text "Login", "Sign in", "Submit", "Enter"
+3. Elements may be in iframes (frame > 0). Include the "frame" number when clicking iframe elements.
+4. After handling cookie banners and login, proceed with the actual task.
 
 Return ONLY a JSON object with the action. Be efficient and goal-directed."""
+
+    # Add credentials availability notice to user prompt
+    credentials_notice = ""
+    if login_params and login_params.get("username") and login_params.get("password"):
+        credentials_notice = f"\n\nCREDENTIALS AVAILABLE: username='{login_params.get('username')}', password='***'\nIf you detect a login form, use these credentials to authenticate before proceeding with the main task."
 
     user_prompt = f"""Step {step_num}/{max_steps}
 
@@ -176,7 +236,7 @@ Interactive elements:
 Page text (excerpt):
 {page_state.get("text", "")[:1000]}
 
-Already visited: {len(visited_urls)} URLs
+Already visited: {len(visited_urls)} URLs{credentials_notice}
 
 Decide next action (JSON only):"""
 
@@ -222,6 +282,7 @@ def explore_with_playwright(
     job_id: str,
     max_steps: int = 20,
     headless: bool = True,
+    login_params: dict[str, Any] | None = None,
 ) -> ExplorationResult:
     """Native Playwright-based agentic exploration using Anthropic for decisions.
 
@@ -282,7 +343,7 @@ def explore_with_playwright(
 
                 # Decide next action
                 action = _decide_next_action(
-                    page_state, nl_request, schema, urls, step, max_steps
+                    page_state, nl_request, schema, urls, step, max_steps, login_params
                 )
 
                 if not action or action.get("action") == "done":
@@ -335,6 +396,41 @@ def explore_with_playwright(
                         if selector and text:
                             page.fill(selector, text)
                             actions.append(Fill(selector=selector, text=text))
+
+                    elif action_type == "select":
+                        selector = action.get("selector", "")
+                        value = action.get("value", "")
+                        if selector and value:
+                            page.select_option(selector, value)
+                            actions.append(Select(selector=selector, value=value))
+                            page.wait_for_load_state("domcontentloaded", timeout=5000)
+
+                    elif action_type == "hover":
+                        selector = action.get("selector", "")
+                        if selector:
+                            page.hover(selector, timeout=5000)
+                            actions.append(Hover(selector=selector))
+                            page.wait_for_timeout(500)  # Wait for hover effects
+
+                    elif action_type == "keypress":
+                        key = action.get("key", "")
+                        selector = action.get("selector")
+                        if key:
+                            if selector:
+                                page.locator(selector).press(key)
+                            else:
+                                page.keyboard.press(key)
+                            actions.append(KeyPress(key=key, selector=selector))
+                            page.wait_for_timeout(500)
+
+                    elif action_type == "upload":
+                        selector = action.get("selector", "")
+                        file_path = action.get("file_path", "")
+                        if selector and file_path:
+                            page.set_input_files(selector, file_path)
+                            actions.append(
+                                Upload(selector=selector, file_path=file_path)
+                            )
 
                     elif action_type == "extract":
                         print(f"[Explorer] Extracting data at step {step}")

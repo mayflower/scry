@@ -11,7 +11,18 @@ from __future__ import annotations
 
 from ...adapters.anthropic import complete_json, has_api_key
 from ...api.dto import ScrapeRequest
-from ..ir.model import Click, Fill, Navigate, ScrapePlan, Validate, WaitFor
+from ..ir.model import (
+    Click,
+    Fill,
+    Hover,
+    KeyPress,
+    Navigate,
+    ScrapePlan,
+    Select,
+    Upload,
+    Validate,
+    WaitFor,
+)
 
 
 def _build_default(req: ScrapeRequest) -> ScrapePlan:
@@ -40,10 +51,10 @@ def build_plan(req: ScrapeRequest) -> ScrapePlan:
     target_urls: list[str] = req.target_urls or []
     sys_prompt = (
         "You are a planner that converts a natural language scraping request into a JSON IR.\n"
-        "Only output strict JSON. Supported step types: navigate(url), click(selector), fill(selector,text), wait_for(selector,state).\n"
+        "Only output strict JSON. Supported step types: navigate(url), click(selector), fill(selector,text), "
+        "select(selector,value), hover(selector), keypress(key,selector?), upload(selector,file_path), wait_for(selector,state).\n"
         "Prefer generic, resilient selectors. If target_urls is provided, you MUST choose the first URL.\n"
-        "IMPORTANT: Never use wait_for on metadata elements like <title>, <meta>, or hidden elements - these are for extraction only.\n"
-        "Only use wait_for for visible page elements that might load dynamically.\n"
+        "IMPORTANT: Never use wait_for on metadata elements like <title>, <meta>, or hidden elements.\n"
     )
     user_prompt = (
         f"nl_request: {req.nl_request}\n\n"
@@ -54,6 +65,10 @@ def build_plan(req: ScrapeRequest) -> ScrapePlan:
         '    {"type": "navigate", "url": string} |\n'
         '    {"type": "click", "selector": string} |\n'
         '    {"type": "fill", "selector": string, "text": string} |\n'
+        '    {"type": "select", "selector": string, "value": string} |\n'
+        '    {"type": "hover", "selector": string} |\n'
+        '    {"type": "keypress", "key": string, "selector": string?} |\n'
+        '    {"type": "upload", "selector": string, "file_path": string} |\n'
         '    {"type": "wait_for", "selector": string, "state": string}\n'
         "  ],\n"
         '  "notes": string\n'
@@ -61,7 +76,17 @@ def build_plan(req: ScrapeRequest) -> ScrapePlan:
     )
     try:
         data, _ = complete_json(sys_prompt, user_prompt, max_tokens=400)
-        steps: list[Navigate | Click | Fill | WaitFor | Validate] = []
+        steps: list[
+            Navigate
+            | Click
+            | Fill
+            | Select
+            | Hover
+            | KeyPress
+            | Upload
+            | WaitFor
+            | Validate
+        ] = []
         for s in data.get("steps", []) or []:
             if not isinstance(s, dict):
                 continue
@@ -90,6 +115,25 @@ def build_plan(req: ScrapeRequest) -> ScrapePlan:
                         for tag in ["title", "meta", "script", "style", "head"]
                     ):
                         steps.append(WaitFor(selector=sel, state=str(state)))
+            elif typ == "select":
+                sel = s.get("selector", "")
+                value = s.get("value", "")
+                if isinstance(sel, str) and sel and isinstance(value, str):
+                    steps.append(Select(selector=sel, value=value))
+            elif typ == "hover":
+                sel = s.get("selector", "")
+                if isinstance(sel, str) and sel:
+                    steps.append(Hover(selector=sel))
+            elif typ in ("keypress", "key_press", "press"):
+                key = s.get("key", "")
+                selector = s.get("selector")
+                if isinstance(key, str) and key:
+                    steps.append(KeyPress(key=key, selector=selector))
+            elif typ == "upload":
+                sel = s.get("selector", "")
+                file_path = s.get("file_path", "")
+                if isinstance(sel, str) and sel and isinstance(file_path, str):
+                    steps.append(Upload(selector=sel, file_path=file_path))
         # Ensure we always navigate to the first target URL if provided
         if req.target_urls:
             first = req.target_urls[0]

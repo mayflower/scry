@@ -12,7 +12,17 @@ from urllib.parse import unquote
 
 from playwright.sync_api import TimeoutError as PWTimeoutError, sync_playwright
 
-from ..ir.model import Click, Fill, Navigate, ScrapePlan, WaitFor
+from ..ir.model import (
+    Click,
+    Fill,
+    Hover,
+    KeyPress,
+    Navigate,
+    ScrapePlan,
+    Select,
+    Upload,
+    WaitFor,
+)
 
 
 def execute_plan(
@@ -56,9 +66,7 @@ def execute_plan(
                 step_index += 1
                 if isinstance(step, Navigate):
                     # Support data: URLs to enable hermetic tests without network
-                    if isinstance(step.url, str) and step.url.startswith(
-                        "data:text/html"
-                    ):
+                    if isinstance(step.url, str) and step.url.startswith("data:text/html"):
                         try:
                             html_part = step.url.split(",", 1)[1]
                             page.set_content(unquote(html_part))
@@ -86,6 +94,18 @@ def execute_plan(
                     except PWTimeoutError:
                         # Non-fatal in V2: continue to capture artifacts
                         pass
+                elif isinstance(step, Select):
+                    page.select_option(step.selector, step.value)
+                elif isinstance(step, Hover):
+                    page.hover(step.selector)
+                    page.wait_for_timeout(500)
+                elif isinstance(step, KeyPress):
+                    if step.selector:
+                        page.locator(step.selector).press(step.key)
+                    else:
+                        page.keyboard.press(step.key)
+                elif isinstance(step, Upload):
+                    page.set_input_files(step.selector, step.file_path)
 
                 # After each step, always capture screenshot and HTML
                 out_path = screenshots_dir / f"step-{step_index}.png"
@@ -103,8 +123,7 @@ def execute_plan(
                 try:
                     page.evaluate("window.scrollTo(0, document.body.scrollHeight/2)")
                     out_path2 = (
-                        screenshots_dir
-                        / f"{'' if step_index else ''}step-{step_index}-scroll.png"
+                        screenshots_dir / f"{'' if step_index else ''}step-{step_index}-scroll.png"
                     )
                     page.screenshot(path=str(out_path2), full_page=True)
                     screenshots.append(out_path2)

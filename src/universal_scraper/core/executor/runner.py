@@ -47,6 +47,7 @@ def run_job_with_id(job_id: str, req: ScrapeRequest) -> ScrapeResponse:
         job_id=job_id,
         max_steps=int(os.getenv("MAX_EXPLORATION_STEPS", "20")),
         headless=settings.headless,
+        login_params=req.login_params,
     )
     execution_log.append("exploration_complete")
 

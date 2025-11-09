@@ -12,7 +12,11 @@ class ScrapeRequest(BaseModel):
     )
     example: dict[str, Any] | None = Field(None, description="Optional example output")
     login_params: dict[str, Any] | None = Field(
-        None, description="Optional generic login params"
+        None,
+        description="Login credentials for LLM-driven authentication. Supports: "
+        "{'username': str, 'password': str} for form-based login (LLM auto-detects forms) OR "
+        "{'http_basic': {'username': str, 'password': str}} for HTTP Basic Auth. "
+        "The LLM will automatically detect and fill login forms when credentials are provided.",
     )
     parameters: dict[str, Any] | None = Field(
         None,
