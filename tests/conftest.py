@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 
-def pytest_sessionstart(session):
+def pytest_sessionstart(_session):
     # Ensure src/ is importable when running pytest without installation
     root = Path(__file__).resolve().parents[1]
     src = root / "src"

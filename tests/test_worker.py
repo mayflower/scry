@@ -114,7 +114,7 @@ class TestWorker:
         with patch("scry.worker.get_bus", return_value=bus):
             call_count = 0
 
-            def dequeue_with_timeout(*args, **kwargs):
+            def dequeue_with_timeout(*_args, **_kwargs):
                 nonlocal call_count
                 call_count += 1
                 if call_count <= 2:

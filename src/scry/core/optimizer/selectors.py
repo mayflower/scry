@@ -10,14 +10,13 @@ import re
 
 
 def make_resilient_selector(
-    selector: str, element_html: str | None = None, prefer_stable: bool = True
+    selector: str, element_html: str | None = None
 ) -> list[str]:
     """Generate multiple fallback selectors for resilience.
 
     Args:
         selector: Original CSS selector
         element_html: Optional HTML of the element for analysis
-        prefer_stable: Whether to prioritize stable attributes
 
     Returns:
         List of selectors ordered by reliability

@@ -156,6 +156,7 @@ artifacts/
 # Claude AI configuration files (should not be in version control)
 CLAUDE.md
 AGENTS.md
+.claude/
 
 # Test artifacts
 /tmp/

@@ -35,7 +35,8 @@ def llm_ready():
     cdp_url = os.getenv("CDP_URL", "http://127.0.0.1:9222")
     cdp_version = None
     try:
-        with urllib.request.urlopen(f"{cdp_url}/json/version", timeout=2) as r:
+        # CDP URL is from controlled env var with safe default (localhost)
+        with urllib.request.urlopen(f"{cdp_url}/json/version", timeout=2) as r:  # nosec B310
             cdp_version = json.loads(r.read().decode("utf-8"))
     except Exception:
         cdp_version = None

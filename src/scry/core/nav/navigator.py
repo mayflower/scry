@@ -66,7 +66,9 @@ def execute_plan(
                 step_index += 1
                 if isinstance(step, Navigate):
                     # Support data: URLs to enable hermetic tests without network
-                    if isinstance(step.url, str) and step.url.startswith("data:text/html"):
+                    if isinstance(step.url, str) and step.url.startswith(
+                        "data:text/html"
+                    ):
                         try:
                             html_part = step.url.split(",", 1)[1]
                             page.set_content(unquote(html_part))
@@ -82,13 +84,7 @@ def execute_plan(
                     state = step.state
                     try:
                         if state in ("visible", "hidden", "attached", "detached"):
-                            from typing import Literal, cast
-
-                            typed_state = cast(
-                                "Literal['visible', 'hidden', 'attached', 'detached']",
-                                state,
-                            )
-                            page.wait_for_selector(step.selector, state=typed_state)
+                            page.wait_for_selector(step.selector, state=state)  # type: ignore[arg-type]
                         else:
                             page.wait_for_selector(step.selector)
                     except PWTimeoutError:
@@ -123,7 +119,8 @@ def execute_plan(
                 try:
                     page.evaluate("window.scrollTo(0, document.body.scrollHeight/2)")
                     out_path2 = (
-                        screenshots_dir / f"{'' if step_index else ''}step-{step_index}-scroll.png"
+                        screenshots_dir
+                        / f"{'' if step_index else ''}step-{step_index}-scroll.png"
                     )
                     page.screenshot(path=str(out_path2), full_page=True)
                     screenshots.append(out_path2)
