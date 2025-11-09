@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from ...adapters.anthropic import complete_json, has_api_key
 from ...api.dto import ScrapeRequest
-from ..ir.model import Click, Fill, Navigate, ScrapePlan, WaitFor
+from ..ir.model import Click, Fill, Navigate, ScrapePlan, Validate, WaitFor
 
 
 def _build_default(req: ScrapeRequest) -> ScrapePlan:
@@ -61,7 +61,7 @@ def build_plan(req: ScrapeRequest) -> ScrapePlan:
     )
     try:
         data, _ = complete_json(sys_prompt, user_prompt, max_tokens=400)
-        steps = []
+        steps: list[Navigate | Click | Fill | WaitFor | Validate] = []
         for s in data.get("steps", []) or []:
             if not isinstance(s, dict):
                 continue

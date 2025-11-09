@@ -9,7 +9,7 @@ import json
 import os
 import queue
 import threading
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 JOB_QUEUE = "scrape_jobs"
@@ -17,25 +17,25 @@ JOB_QUEUE = "scrape_jobs"
 
 class InMemoryBus:
     def __init__(self) -> None:
-        self._q: "queue.Queue[str]" = queue.Queue()
-        self._results: Dict[str, Dict[str, Any]] = {}
+        self._q: queue.Queue[str] = queue.Queue()
+        self._results: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
 
-    def enqueue(self, payload: Dict[str, Any]) -> None:
+    def enqueue(self, payload: dict[str, Any]) -> None:
         self._q.put(json.dumps(payload))
 
-    def dequeue(self, timeout: Optional[float] = None) -> Optional[Dict[str, Any]]:
+    def dequeue(self, timeout: float | None = None) -> dict[str, Any] | None:
         try:
             msg = self._q.get(timeout=timeout)
         except queue.Empty:
             return None
         return json.loads(msg)
 
-    def set_result(self, job_id: str, result: Dict[str, Any]) -> None:
+    def set_result(self, job_id: str, result: dict[str, Any]) -> None:
         with self._lock:
             self._results[job_id] = result
 
-    def get_result(self, job_id: str) -> Optional[Dict[str, Any]]:
+    def get_result(self, job_id: str) -> dict[str, Any] | None:
         with self._lock:
             return self._results.get(job_id)
 
@@ -46,25 +46,27 @@ class RedisBus:
 
         self._r = redis.Redis.from_url(url, decode_responses=True)
 
-    def enqueue(self, payload: Dict[str, Any]) -> None:
+    def enqueue(self, payload: dict[str, Any]) -> None:
         self._r.rpush(JOB_QUEUE, json.dumps(payload))
 
-    def dequeue(self, timeout: Optional[float] = None) -> Optional[Dict[str, Any]]:
+    def dequeue(self, timeout: float | None = None) -> dict[str, Any] | None:
         to = int(timeout) if timeout else 0
-        item = self._r.blpop(JOB_QUEUE, timeout=to)
+        item = self._r.blpop([JOB_QUEUE], timeout=to)
         if not item:
             return None
-        _, msg = item
+        _, msg = item  # type: ignore[misc]
+        if isinstance(msg, bytes):
+            msg = msg.decode("utf-8")
         return json.loads(msg)
 
-    def set_result(self, job_id: str, result: Dict[str, Any]) -> None:
+    def set_result(self, job_id: str, result: dict[str, Any]) -> None:
         key = f"job:{job_id}:result"
         self._r.set(key, json.dumps(result), ex=3600)
 
-    def get_result(self, job_id: str) -> Optional[Dict[str, Any]]:
+    def get_result(self, job_id: str) -> dict[str, Any] | None:
         key = f"job:{job_id}:result"
         val = self._r.get(key)
-        return json.loads(val) if val else None
+        return json.loads(val) if val else None  # type: ignore[arg-type]
 
 
 def get_bus():

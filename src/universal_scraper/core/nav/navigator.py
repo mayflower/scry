@@ -12,8 +12,6 @@ from urllib.parse import unquote
 
 from playwright.sync_api import TimeoutError as PWTimeoutError, sync_playwright
 
-from ...adapters.browser_use import BrowserUseSession, is_browser_use_available
-from ...config.settings import settings
 from ..ir.model import Click, Fill, Navigate, ScrapePlan, WaitFor
 
 
@@ -32,40 +30,8 @@ def execute_plan(
     if not plan.steps:
         return html_snapshots, screenshots
 
-    # Choose backend
-    use_browser_use = (
-        getattr(settings, "nav_backend", "playwright") == "browser_use"
-    ) and is_browser_use_available()
-    if use_browser_use:
-        sess = BrowserUseSession(
-            headless=headless, timeout_ms=timeout_ms, login_params=login_params
-        )
-        try:
-            step_index = 0
-            for step in plan.steps:
-                step_index += 1
-                if isinstance(step, Navigate):
-                    sess.goto(step.url)
-                elif isinstance(step, Click):
-                    sess.click(step.selector)
-                elif isinstance(step, Fill):
-                    sess.fill(step.selector, step.text)
-                elif isinstance(step, WaitFor):
-                    sess.wait_for(step.selector, step.state)
-                # Screenshot and HTML after each step
-                out_path = screenshots_dir / f"step-{step_index}.png"
-                out_path.parent.mkdir(parents=True, exist_ok=True)
-                sess.screenshot(out_path)
-                screenshots.append(out_path)
-                html = sess.content()
-                html_snapshots.append(html)
-                html_dir.mkdir(parents=True, exist_ok=True)
-                html_out = html_dir / f"{job_id}-page-{step_index}.html"
-                html_out.write_text(html, encoding="utf-8")
-            return html_snapshots, screenshots
-        finally:
-            sess.close()
-
+    # Always use Playwright directly for deterministic execution of IR steps
+    # Browser-use agent is used for exploration in run_v2_job, not here
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
         try:
@@ -90,7 +56,9 @@ def execute_plan(
                 step_index += 1
                 if isinstance(step, Navigate):
                     # Support data: URLs to enable hermetic tests without network
-                    if isinstance(step.url, str) and step.url.startswith("data:text/html"):
+                    if isinstance(step.url, str) and step.url.startswith(
+                        "data:text/html"
+                    ):
                         try:
                             html_part = step.url.split(",", 1)[1]
                             page.set_content(unquote(html_part))
@@ -106,7 +74,13 @@ def execute_plan(
                     state = step.state
                     try:
                         if state in ("visible", "hidden", "attached", "detached"):
-                            page.wait_for_selector(step.selector, state=state)
+                            from typing import Literal, cast
+
+                            typed_state = cast(
+                                "Literal['visible', 'hidden', 'attached', 'detached']",
+                                state,
+                            )
+                            page.wait_for_selector(step.selector, state=typed_state)
                         else:
                             page.wait_for_selector(step.selector)
                     except PWTimeoutError:
@@ -129,7 +103,8 @@ def execute_plan(
                 try:
                     page.evaluate("window.scrollTo(0, document.body.scrollHeight/2)")
                     out_path2 = (
-                        screenshots_dir / f"{'' if step_index else ''}step-{step_index}-scroll.png"
+                        screenshots_dir
+                        / f"{'' if step_index else ''}step-{step_index}-scroll.png"
                     )
                     page.screenshot(path=str(out_path2), full_page=True)
                     screenshots.append(out_path2)
