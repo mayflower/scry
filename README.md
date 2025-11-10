@@ -136,12 +136,58 @@ pytest tests/test_new_actions.py -v
 
 See [CLAUDE.md](CLAUDE.md) for detailed architecture documentation.
 
-**Core Data Flow:**
-1. **Exploration** (adapters/playwright_explorer.py) → LLM-driven page state analysis → action decisions
-2. **Optimization** (core/optimizer/optimize.py) → compress paths, stabilize selectors
-3. **Code Generation** (core/codegen/generator.py) → pure Playwright Python script
-4. **Execution** (core/executor/runner.py) → run generated script, capture artifacts
-5. **Self-Healing** (core/self_heal/) → on failure, diagnose and patch, regenerate and retry
+### System Flow
+
+```mermaid
+graph TB
+    A[User Request] --> B[LLM-Driven Exploration]
+    B --> C[ScrapePlan IR]
+    C --> D[Optimization]
+    D --> E[Code Generation]
+    E --> F[Pure Playwright Script]
+    F --> G{Execution Success?}
+    G -->|Yes| H[Return Data + Artifacts]
+    G -->|No| I[Self-Healing Diagnosis]
+    I --> J[Apply Heuristic Patches]
+    J --> K{Max Attempts?}
+    K -->|No| D
+    K -->|Yes| L[Return Failure]
+
+    style B fill:#e1f5ff
+    style F fill:#fff4e1
+    style I fill:#ffe1e1
+    style H fill:#e1ffe1
+```
+
+**Key Phases:**
+
+1. **LLM-Driven Exploration** (adapters/playwright_explorer.py)
+   - Claude analyzes page state and decides actions
+   - Captures screenshots, HTML, URLs at each step
+   - Outputs: ExplorationResult with navigation steps
+
+2. **IR Compression** (core/ir/model.py)
+   - Converts exploration into ScrapePlan IR
+   - Actions: Navigate, Click, Fill, Select, Hover, KeyPress, Upload, WaitFor, Validate
+
+3. **Optimization** (core/optimizer/optimize.py)
+   - Compresses redundant paths
+   - Stabilizes selectors with fallbacks
+
+4. **Code Generation** (core/codegen/generator.py)
+   - Generates pure Playwright Python script
+   - No AI dependencies at runtime
+   - No embedded secrets
+
+5. **Execution** (core/executor/runner.py)
+   - Runs generated script in isolated subprocess
+   - Captures artifacts (screenshots, HTML)
+   - Returns structured data
+
+6. **Self-Healing** (core/self_heal/)
+   - On failure: diagnose with HTML snapshots
+   - Apply heuristic patches: wait_load_state, extra_wait_ms, handle_cookie_banner, etc.
+   - Regenerate and retry (up to 20 attempts)
 
 **Key Components:**
 - `src/scry/api/` - REST endpoints
