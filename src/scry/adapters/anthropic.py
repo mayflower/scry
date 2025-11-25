@@ -59,6 +59,68 @@ def _extract_json(text: str) -> dict[str, Any]:
     raise ValueError("Failed to parse JSON from Claude response")
 
 
+def create_browser_tool_config(
+    viewport_width: int = 1024, viewport_height: int = 768
+) -> dict[str, Any]:
+    """Create Browser Tools API tool configuration.
+
+    Args:
+        viewport_width: Browser viewport width in pixels
+        viewport_height: Browser viewport height in pixels
+
+    Returns:
+        Tool configuration dict for browser_20250910 tool
+    """
+    return {
+        "type": "browser_20250910",
+        "name": "browser",
+        "display_width_px": viewport_width,
+        "display_height_px": viewport_height,
+    }
+
+
+def complete_with_browser_tools(
+    messages: list[dict[str, Any]],
+    model: str = "claude-sonnet-4-20250514",
+    max_tokens: int = 4096,
+    temperature: float = 0.0,
+    viewport_width: int = 1024,
+    viewport_height: int = 768,
+    system_prompt: str | None = None,
+) -> Any:
+    """Call Claude with Browser Tools API.
+
+    Args:
+        messages: Conversation messages in Anthropic format
+        model: Claude model to use (default: claude-sonnet-4-20250514)
+        max_tokens: Max tokens in response
+        temperature: Temperature for sampling (0.0 = deterministic)
+        viewport_width: Browser viewport width
+        viewport_height: Browser viewport height
+        system_prompt: Optional system prompt
+
+    Returns:
+        Anthropic API response object
+    """
+    client = _client()
+
+    tool_config = create_browser_tool_config(viewport_width, viewport_height)
+
+    kwargs: dict[str, Any] = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "tools": [tool_config],
+        "messages": messages,
+        "extra_headers": {"anthropic-beta": "browser-tools-2025-09-10"},
+    }
+
+    if system_prompt:
+        kwargs["system"] = system_prompt
+
+    return client.messages.create(**kwargs)
+
+
 def complete_json(
     system_prompt: str,
     user_prompt: str,
