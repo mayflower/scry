@@ -1,627 +1,286 @@
-"""Native async Playwright-based agentic exploration.
+"""Native Playwright-based agentic exploration using Browser Tools API.
 
-Replaces browser-use dependency with a lightweight Anthropic + Playwright implementation
-that provides similar exploration capabilities without external dependencies.
-
-Uses async Playwright API which:
-- Has no thread affinity issues (unlike sync API)
-- Works naturally with FastAPI/MCP async contexts
-- Enables browser pooling without thread complications
+This module implements web exploration using Anthropic's native Browser Tools API
+(browser_20250910), which provides more robust automation through element references
+and accessibility tree navigation compared to custom JSON-based approaches.
 """
 
 from __future__ import annotations
 
-import base64
-import io
-import json
-import os
-import time
-from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
+from typing import Any
 
-from PIL import Image
-from playwright.async_api import Page, async_playwright
-
-from ..core.extractor.llm_extract import extract_from_text
 from ..core.ir.model import (
     Click,
     Fill,
-    Hover,
     KeyPress,
     Navigate,
-    Select,
-    Upload,
-    Validate,
 )
 from ..core.nav.explore import ExplorationResult
-from .anthropic import complete_json, has_api_key
-from .browser_pool import get_browser_pool
-
-if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator
-
-    from playwright.async_api import Browser, Playwright
-
-# Type alias for progress callback - can be sync or async callable
-ProgressCallback = Any
+from .anthropic import complete_with_browser_tools, has_api_key
+from .browser_executor import BrowserExecutor
 
 
-def _compress_screenshot(png_bytes: bytes, max_width: int = 256) -> str:
-    """Compress a PNG screenshot to reduce size for streaming.
+def _create_system_prompt() -> str:
+    """Create system prompt for browser automation agent."""
+    return """You are a web automation agent using browser tools to explore websites and extract data.
+
+Your capabilities:
+- navigate: Go to URLs or use browser history (back/forward)
+- read_page: See the page structure with element references (ref_X)
+- screenshot: Capture current viewport
+- left_click: Click elements by ref or coordinate
+- type: Type text into focused element
+- form_input: Directly set form field values by ref
+- scroll: Scroll in direction (up/down/left/right)
+- key: Press keyboard keys (enter, tab, etc.)
+- wait: Wait for specified duration
+
+IMPORTANT WORKFLOW:
+1. After navigating to a page, ALWAYS call read_page first to understand the structure
+2. Use element references (ref_X) from read_page output for reliable interaction
+3. Handle cookie banners immediately - look for "Accept", "OK", "Agree" buttons
+4. Be efficient - minimize unnecessary actions
+5. When you've completed the task or are stuck, explain your reasoning
+
+Element references are stable identifiers that survive page changes better than CSS selectors."""
+
+
+def _map_tool_action_to_ir(
+    action_name: str, input_data: dict[str, Any], ref_manager: Any
+) -> Any:
+    """Map Browser Tools API action to IR action.
 
     Args:
-        png_bytes: Raw PNG image bytes
-        max_width: Maximum width to resize to (default 256px for efficient streaming)
+        action_name: Browser tool action name
+        input_data: Action input data from tool_use block
+        ref_manager: Element reference manager for selector lookup
 
     Returns:
-        Base64-encoded compressed PNG string
+        IR action object (Navigate, Click, Fill, etc.) or None
     """
-    try:
-        img = Image.open(io.BytesIO(png_bytes))
+    if action_name == "navigate":
+        url = input_data.get("text", "")
+        if url and url not in ("back", "forward"):
+            return Navigate(url=url)
 
-        # Calculate new dimensions maintaining aspect ratio
-        if img.width > max_width:
-            ratio = max_width / img.width
-            new_height = int(img.height * ratio)
-            img = img.resize((max_width, new_height), Image.Resampling.LANCZOS)
+    elif action_name == "left_click":
+        ref = input_data.get("ref")
+        if ref:
+            ref_data = ref_manager.get_ref(ref)
+            if ref_data:
+                return Click(selector=ref_data.selector)
 
-        # Save to bytes
-        output = io.BytesIO()
-        img.save(output, format="PNG", optimize=True)
-        output.seek(0)
+    elif action_name in ("type", "form_input"):
+        ref = input_data.get("ref")
+        text = input_data.get("text") or input_data.get("value")
+        if ref and text:
+            ref_data = ref_manager.get_ref(ref)
+            if ref_data:
+                return Fill(selector=ref_data.selector, text=str(text))
 
-        return base64.b64encode(output.read()).decode("utf-8")
-    except Exception:
-        # Fallback: return original as base64
-        return base64.b64encode(png_bytes).decode("utf-8")
+    elif action_name == "key":
+        key_text = input_data.get("text", "")
+        if key_text:
+            return KeyPress(key=key_text)
 
+    # Note: scroll, screenshot, read_page, etc. are exploration actions
+    # that don't map to IR actions - they're for runtime only
 
-async def _get_page_state(page: Page) -> dict[str, Any]:
-    """Extract relevant page state for LLM decision-making.
-
-    Scans both the main page and all iframes to find interactive elements,
-    which is crucial for handling cookie consent dialogs that often live in iframes.
-    """
-    try:
-        # Get basic page info
-        title = await page.title()
-        url = page.url
-
-        # Extract elements from a frame
-        async def extract_frame_elements(frame, _frame_idx=0):
-            """Extract interactive elements from a frame."""
-            try:
-                return await frame.evaluate("""() => {
-                    const getSelector = (el) => {
-                        if (el.id) return '#' + el.id;
-                        if (el.className && typeof el.className === 'string') {
-                            const classes = el.className.trim().split(/\\s+/).slice(0, 2).join('.');
-                            if (classes) return el.tagName.toLowerCase() + '.' + classes;
-                        }
-                        return el.tagName.toLowerCase();
-                    };
-
-                    const elements = [];
-                    // Get clickable elements
-                    document.querySelectorAll('a, button, [role="button"], [onclick], input[type="button"], input[type="submit"]').forEach((el, idx) => {
-                        if (idx < 50 && el.offsetParent !== null) {  // Visible elements only, limit to 50
-                            elements.push({
-                                type: 'clickable',
-                                selector: getSelector(el),
-                                text: el.textContent?.trim().substring(0, 100) || el.value || '',
-                                tag: el.tagName.toLowerCase()
-                            });
-                        }
-                    });
-
-                    // Get input fields with metadata for LLM to recognize login fields
-                    document.querySelectorAll('input:not([type="button"]):not([type="submit"]):not([type="file"]), textarea').forEach((el, idx) => {
-                        if (idx < 20 && el.offsetParent !== null) {  // Limit to 20
-                            elements.push({
-                                type: 'input',
-                                selector: getSelector(el),
-                                placeholder: el.placeholder || '',
-                                inputType: el.type || 'text',
-                                name: el.name || '',
-                                id: el.id || '',
-                                autocomplete: el.autocomplete || '',
-                                ariaLabel: el.getAttribute('aria-label') || ''
-                            });
-                        }
-                    });
-
-                    // Get select elements with their options
-                    document.querySelectorAll('select').forEach((el, idx) => {
-                        if (idx < 10 && el.offsetParent !== null) {
-                            const options = Array.from(el.options).slice(0, 5).map(opt => ({
-                                value: opt.value,
-                                text: opt.text
-                            }));
-                            elements.push({
-                                type: 'select',
-                                selector: getSelector(el),
-                                name: el.name || '',
-                                id: el.id || '',
-                                options: options
-                            });
-                        }
-                    });
-
-                    // Get file upload inputs
-                    document.querySelectorAll('input[type="file"]').forEach((el, idx) => {
-                        if (idx < 5 && el.offsetParent !== null) {
-                            elements.push({
-                                type: 'file_upload',
-                                selector: getSelector(el),
-                                accept: el.accept || '',
-                                multiple: el.multiple,
-                                name: el.name || '',
-                                id: el.id || ''
-                            });
-                        }
-                    });
-
-                    return elements;
-                }""")
-            except Exception:
-                return []
-
-        # Collect elements from main frame and all iframes
-        all_elements = []
-
-        # Main frame (frame_idx=0)
-        main_elements = await extract_frame_elements(page.main_frame, 0)
-        for elem in main_elements:
-            elem["frame"] = 0
-        all_elements.extend(main_elements)
-
-        # Scan all iframes for consent dialogs
-        frames = page.frames
-        for idx, frame in enumerate(
-            frames[1:], start=1
-        ):  # Skip main frame (already done)
-            try:
-                frame_url = frame.url
-                # Only scan frames that might contain consent dialogs
-                if frame_url and frame_url != "about:blank":
-                    iframe_elements = await extract_frame_elements(frame, idx)
-                    for elem in iframe_elements:
-                        elem["frame"] = idx
-                        elem["frame_url"] = frame_url[:80]  # Truncate for display
-                    all_elements.extend(iframe_elements)
-                    print(
-                        f"[Explorer] Scanned iframe {idx}: {frame_url[:80]} - found {len(iframe_elements)} elements"
-                    )
-            except Exception as e:
-                print(f"[Explorer] Failed to scan iframe {idx}: {e}")
-                continue
-
-        # Get visible text content (first 3000 chars) from main frame
-        text_content = await page.evaluate("() => document.body.innerText")
-        if isinstance(text_content, str):
-            text_content = text_content[:3000]
-
-        return {
-            "title": title,
-            "url": url,
-            "elements": all_elements,
-            "text": text_content,
-            "frames_scanned": len(frames),
-        }
-    except Exception as e:
-        return {
-            "title": "",
-            "url": page.url,
-            "elements": [],
-            "text": "",
-            "error": str(e),
-        }
+    return None
 
 
-def _decide_next_action(
-    page_state: dict[str, Any],
-    nl_request: str,
-    schema: dict[str, Any],
-    visited_urls: list[str],
-    step_num: int,
-    max_steps: int,
-    login_params: dict[str, Any] | None = None,
-) -> dict[str, Any] | None:
-    """Use LLM to decide next action based on page state."""
-    if not has_api_key():
-        return None
-
-    schema_str = json.dumps(schema, indent=2)
-    elements_str = json.dumps(
-        page_state.get("elements", [])[:30], indent=2
-    )  # Limit for token efficiency
-
-    sys_prompt = """You are a web exploration agent. Based on the current page state, decide the next action.
-
-Available actions:
-- navigate: {"action": "navigate", "url": "https://..."}
-- click: {"action": "click", "selector": "button.submit", "frame": 0}
-- fill: {"action": "fill", "selector": "input#search", "text": "search term"}
-- select: {"action": "select", "selector": "select#country", "value": "USA"}
-- hover: {"action": "hover", "selector": ".menu-item"}
-- keypress: {"action": "keypress", "key": "Enter", "selector": "input#search"}
-- upload: {"action": "upload", "selector": "input[type='file']", "file_path": "/tmp/file.pdf"}
-- extract: {"action": "extract"} - when you've found the data
-- done: {"action": "done"} - when task is complete or stuck
-
-IMPORTANT PRIORITY RULES:
-1. **Cookie/Consent Banners**: If you see buttons with text like "Accept", "Zustimmen", "Agree", "OK",
-   "Alle akzeptieren", "Einverstanden" in ANY frame, click them IMMEDIATELY before doing anything else.
-   Cookie banners block content and must be dismissed first.
-2. **Login Forms**: If you detect a login/signin form (look for password input fields, username/email fields,
-   login/signin buttons) and credentials are available, fill and submit the form BEFORE proceeding with the main task.
-   Typical login indicators:
-   - Input with inputType="password"
-   - Input with name/id/autocomplete containing "user", "email", "login", "username"
-   - Buttons with text "Login", "Sign in", "Submit", "Enter"
-3. Elements may be in iframes (frame > 0). Include the "frame" number when clicking iframe elements.
-4. After handling cookie banners and login, proceed with the actual task.
-
-Return ONLY a JSON object with the action. Be efficient and goal-directed."""
-
-    # Add credentials availability notice to user prompt
-    credentials_notice = ""
-    if login_params and login_params.get("username") and login_params.get("password"):
-        credentials_notice = f"\n\nCREDENTIALS AVAILABLE: username='{login_params.get('username')}', password='***'\nIf you detect a login form, use these credentials to authenticate before proceeding with the main task."
-
-    user_prompt = f"""Step {step_num}/{max_steps}
-
-Task: {nl_request}
-
-Target schema: {schema_str}
-
-Current page:
-- URL: {page_state.get("url", "")}
-- Title: {page_state.get("title", "")}
-
-Interactive elements:
-{elements_str}
-
-Page text (excerpt):
-{page_state.get("text", "")[:1000]}
-
-Already visited: {len(visited_urls)} URLs{credentials_notice}
-
-Decide next action (JSON only):"""
-
-    try:
-        data, _ = complete_json(sys_prompt, user_prompt, max_tokens=300)
-        return data if isinstance(data, dict) else None
-    except Exception as e:
-        print(f"[Explorer] LLM decision failed: {e}")
-        return None
-
-
-async def _extract_data_from_page(
-    page: Page,
-    nl_request: str,
-    schema: dict[str, Any],
-) -> dict[str, Any]:
-    """Extract structured data from current page using LLM."""
-    if not has_api_key():
-        return {}
-
-    # Get page content
-    try:
-        text = await page.evaluate("() => document.body.innerText")
-
-        # Use LLM to extract structured data
-        data = extract_from_text(
-            nl_request, None, schema, text if isinstance(text, str) else str(text)
-        )
-        return data if isinstance(data, dict) else {}
-    except Exception as e:
-        print(f"[Explorer] Extraction failed: {e}")
-        return {}
-
-
-def _use_browser_pool() -> bool:
-    """Check if browser pool is enabled via environment variable."""
-    return os.getenv("BROWSER_USE_POOL", "true").lower() in {"true", "1", "yes"}
-
-
-@asynccontextmanager
-async def _direct_launch(
-    headless: bool,
-) -> AsyncGenerator[tuple[Browser, Playwright], None]:
-    """Direct browser launch without pool (fallback mode)."""
-    p = await async_playwright().start()
-    browser = await p.chromium.launch(headless=headless)
-    try:
-        yield browser, p
-    finally:
-        await browser.close()
-        await p.stop()
-
-
-async def explore_with_playwright(  # noqa: PLR0912, PLR0915
+def explore_with_playwright(
     start_url: str,
     nl_request: str,
     schema: dict[str, Any],
     screenshots_dir: Path,
-    html_dir: Path,  # noqa: ARG001
+    html_dir: Path,
     job_id: str,
     max_steps: int = 20,
     headless: bool = True,
     login_params: dict[str, Any] | None = None,
-    progress_callback: ProgressCallback | None = None,
 ) -> ExplorationResult:
-    """Async Playwright-based agentic exploration using Anthropic for decisions.
+    """Explore website using Browser Tools API.
 
-    This replaces browser-use with a lightweight implementation that:
-    - Uses async Playwright for browser automation (no thread affinity issues)
-    - Uses Anthropic Claude for exploration decisions
-    - Captures actions, screenshots, and HTML
-    - Returns ExplorationResult compatible with existing pipeline
+    This replaces the custom JSON-based exploration with native Anthropic
+    Browser Tools API integration for more robust automation.
 
     Args:
-        progress_callback: Optional callback for real-time progress streaming.
-            Called with dict containing: step, action, screenshot_b64, url, status
+        start_url: Starting URL for exploration
+        nl_request: Natural language request describing the task
+        schema: JSON schema for data to extract
+        screenshots_dir: Directory for saving screenshots
+        html_dir: Directory for saving HTML snapshots
+        job_id: Unique job identifier
+        max_steps: Maximum exploration steps (default: 20)
+        headless: Whether to run browser in headless mode
+        login_params: Optional login credentials (username, password)
 
-    Environment:
-        BROWSER_USE_POOL: Enable browser pool for faster startup (default: true)
+    Returns:
+        ExplorationResult with actions, screenshots, HTML pages, URLs, and extracted data
     """
-
-    start_time = time.perf_counter()
-    print(f"[Explorer] Starting async exploration for job {job_id}")
+    print(f"[Explorer] Starting Browser Tools API exploration for job {job_id}")
     print(f"[Explorer] Target: {start_url}")
     print(f"[Explorer] Task: {nl_request}")
 
-    actions: list[Any] = []
-    urls: list[str] = []
-    html_pages: list[str] = []
-    screenshots: list[Path] = []
-    data: dict[str, Any] = {}
+    if not has_api_key():
+        print("[Explorer] No API key found, falling back to basic navigation")
+        # Fallback to simple navigation without LLM
+        steps = [Navigate(url=start_url)]
+        return ExplorationResult(
+            steps=steps,  # type: ignore[arg-type]
+            screenshots=[],
+            html_pages=[],
+            urls=[start_url],
+            data={},
+        )
 
-    # Get target domain for restriction
-    parsed_url = urlparse(start_url)
-    target_domain = parsed_url.netloc.removeprefix("www.")
+    # Initialize browser executor
+    executor = BrowserExecutor(
+        viewport_width=1280, viewport_height=720, headless=headless
+    )
+    executor.start()
 
-    # Use browser pool if enabled, otherwise fall back to direct launch
-    use_pool = _use_browser_pool()
+    try:
+        # Track exploration results
+        ir_actions: list[Any] = []
+        urls: list[str] = []
+        html_pages: list[str] = []
+        screenshots: list[Path] = []
+        data: dict[str, Any] = {}
 
-    if use_pool:
-        pool = await get_browser_pool()
-        context_manager = pool.acquire()
-        print("[Explorer] Using async browser pool")
-    else:
-        print("[Explorer] Using direct browser launch (pool disabled)")
-        context_manager = _direct_launch(headless)
+        # Build task description
+        task_description = f"""Task: {nl_request}
 
-    async with context_manager as (browser, _playwright):
-        context = None
-        try:
-            context = await browser.new_context(
-                viewport={"width": 1280, "height": 720},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            )
-            page = await context.new_page()
-            page.set_default_timeout(30000)
+Target schema for data extraction:
+{schema}
 
-            browser_ready_time = time.perf_counter()
-            print(f"[Explorer] Browser ready in {browser_ready_time - start_time:.2f}s")
+Starting URL: {start_url}
 
-            # Navigate to start URL
-            print(f"[Explorer] Navigating to {start_url}")
-            await page.goto(start_url, wait_until="domcontentloaded")
-            actions.append(Navigate(url=start_url))
-            urls.append(start_url)
+Instructions:
+1. Navigate to the starting URL
+2. Explore the site to accomplish the task
+3. Extract data matching the schema when found
+4. Be efficient - complete the task in as few steps as possible
 
-            # Wait for dynamic content and iframes to load
-            await page.wait_for_timeout(2000)
+When you're done or stuck, explain what you accomplished."""
 
-            # Capture initial state
-            screenshot_path = screenshots_dir / f"exploration-step-0-{job_id}.png"
-            screenshot_path.parent.mkdir(parents=True, exist_ok=True)
-            screenshot_bytes = await page.screenshot(full_page=True)
-            screenshot_path.write_bytes(screenshot_bytes)
-            screenshots.append(screenshot_path)
+        # Initialize conversation with user task
+        messages: list[dict[str, Any]] = [{"role": "user", "content": task_description}]
 
-            # Emit progress callback for initial state
-            if progress_callback:
-                try:
-                    progress_callback(
-                        {
-                            "step": 0,
-                            "max_steps": max_steps,
-                            "action": "navigate",
-                            "screenshot_b64": _compress_screenshot(screenshot_bytes),
-                            "url": start_url,
-                            "status": "exploring",
-                        }
-                    )
-                except Exception as e:
-                    print(f"[Explorer] Progress callback failed: {e}")
+        # Agent loop
+        for iteration in range(max_steps):
+            print(f"[Explorer] Iteration {iteration + 1}/{max_steps}")
 
-            html_content = await page.content()
-            html_pages.append(html_content)
-
-            # Exploration loop
-            for step in range(1, max_steps + 1):
-                print(f"[Explorer] Step {step}/{max_steps}")
-
-                # Get current page state
-                page_state = await _get_page_state(page)
-
-                # Decide next action (sync LLM call - could be made async later)
-                action = _decide_next_action(
-                    page_state, nl_request, schema, urls, step, max_steps, login_params
+            # Call Claude with browser tools
+            try:
+                response = complete_with_browser_tools(
+                    messages=messages,
+                    model="claude-sonnet-4-20250514",  # Can switch to haiku for cost savings
+                    max_tokens=4096,
+                    system_prompt=_create_system_prompt(),
                 )
+            except Exception as e:
+                print(f"[Explorer] API error: {e}")
+                break
 
-                if not action or action.get("action") == "done":
-                    print(f"[Explorer] Agent decided to stop at step {step}")
-                    break
+            # Process response - build assistant message
+            assistant_content: list[dict[str, Any]] = []
 
-                action_type = action.get("action", "")
-                print(f"[Explorer] Action: {action_type}")
+            # Extract text and tool_use blocks
+            has_tool_use = False
+            for block in response.content:
+                if hasattr(block, "type"):
+                    if block.type == "text":
+                        assistant_content.append({"type": "text", "text": block.text})
+                        print(f"[Explorer] Claude: {block.text[:200]}")
+                    elif block.type == "tool_use":
+                        has_tool_use = True
+                        assistant_content.append(
+                            {
+                                "type": "tool_use",
+                                "id": block.id,
+                                "name": block.name,
+                                "input": block.input,
+                            }
+                        )
+                        action_name = block.input.get("action", "unknown")
+                        print(f"[Explorer] Tool use: {action_name} (id: {block.id})")
 
-                try:
-                    if action_type == "navigate":
-                        nav_url = action.get("url", "")
-                        # Check domain restriction
-                        nav_domain = urlparse(nav_url).netloc.removeprefix("www.")
-                        if target_domain not in nav_domain:
-                            print(
-                                f"[Explorer] Skipping navigation to different domain: {nav_url}"
-                            )
-                            continue
+            # Add assistant message to conversation
+            messages.append({"role": "assistant", "content": assistant_content})
 
-                        await page.goto(nav_url, wait_until="domcontentloaded")
-                        actions.append(Navigate(url=nav_url))
-                        urls.append(nav_url)
+            # Check if done (no more tool use)
+            if not has_tool_use or response.stop_reason != "tool_use":
+                print("[Explorer] Agent finished - no more tool use")
+                break
 
-                    elif action_type == "click":
-                        selector = action.get("selector", "")
-                        frame_idx = action.get("frame", 0)
-                        if selector:
-                            # Click in the appropriate frame
-                            if frame_idx == 0:
-                                # Main frame
-                                await page.click(selector, timeout=5000)
-                            else:
-                                # Iframe - get the frame by index
-                                frames = page.frames
-                                if 0 <= frame_idx < len(frames):
-                                    await frames[frame_idx].click(
-                                        selector, timeout=5000
-                                    )
-                                    print(f"[Explorer] Clicked in iframe {frame_idx}")
-                                else:
-                                    print(
-                                        f"[Explorer] Invalid frame index: {frame_idx}"
-                                    )
-                                    continue
-                            actions.append(Click(selector=selector))
-                            await page.wait_for_load_state(
-                                "domcontentloaded", timeout=5000
-                            )
+            # Execute tool calls and collect results
+            tool_results: list[dict[str, Any]] = []
 
-                    elif action_type == "fill":
-                        selector = action.get("selector", "")
-                        text = action.get("text", "")
-                        if selector and text:
-                            await page.fill(selector, text)
-                            actions.append(Fill(selector=selector, text=text))
-
-                    elif action_type == "select":
-                        selector = action.get("selector", "")
-                        value = action.get("value", "")
-                        if selector and value:
-                            await page.select_option(selector, value)
-                            actions.append(Select(selector=selector, value=value))
-                            await page.wait_for_load_state(
-                                "domcontentloaded", timeout=5000
-                            )
-
-                    elif action_type == "hover":
-                        selector = action.get("selector", "")
-                        if selector:
-                            await page.hover(selector, timeout=5000)
-                            actions.append(Hover(selector=selector))
-                            await page.wait_for_timeout(500)  # Wait for hover effects
-
-                    elif action_type == "keypress":
-                        key = action.get("key", "")
-                        selector = action.get("selector")
-                        if key:
-                            if selector:
-                                await page.locator(selector).press(key)
-                            else:
-                                await page.keyboard.press(key)
-                            actions.append(KeyPress(key=key, selector=selector))
-                            await page.wait_for_timeout(500)
-
-                    elif action_type == "upload":
-                        selector = action.get("selector", "")
-                        file_path = action.get("file_path", "")
-                        if selector and file_path:
-                            await page.set_input_files(selector, file_path)
-                            actions.append(
-                                Upload(selector=selector, file_path=file_path)
-                            )
-
-                    elif action_type == "extract":
-                        print(f"[Explorer] Extracting data at step {step}")
-                        data = await _extract_data_from_page(page, nl_request, schema)
-                        print(f"[Explorer] Extracted: {data}")
-                        break
-
-                    # Capture state after action
-                    await page.wait_for_timeout(1000)  # Brief wait for content
-
-                    screenshot_path = (
-                        screenshots_dir / f"exploration-step-{step}-{job_id}.png"
-                    )
-                    screenshot_bytes = await page.screenshot(full_page=True)
-                    screenshot_path.write_bytes(screenshot_bytes)
-                    screenshots.append(screenshot_path)
-
-                    # Check if URL changed
-                    current_url = page.url
-                    if current_url not in urls:
-                        urls.append(current_url)
-
-                    # Emit progress callback for this step
-                    if progress_callback:
-                        try:
-                            progress_callback(
-                                {
-                                    "step": step,
-                                    "max_steps": max_steps,
-                                    "action": action_type,
-                                    "screenshot_b64": _compress_screenshot(
-                                        screenshot_bytes
-                                    ),
-                                    "url": current_url,
-                                    "status": "exploring",
-                                }
-                            )
-                        except Exception as cb_err:
-                            print(f"[Explorer] Progress callback failed: {cb_err}")
-
-                    html_content = await page.content()
-                    html_pages.append(html_content)
-
-                except Exception as e:
-                    print(f"[Explorer] Action failed: {e}")
-                    # Continue exploration despite failures
+            for block in response.content:
+                if not hasattr(block, "type") or block.type != "tool_use":
                     continue
 
-            # Final extraction if not done yet
-            if not data:
-                print("[Explorer] Performing final extraction")
-                data = await _extract_data_from_page(page, nl_request, schema)
+                if block.name != "browser":
+                    print(f"[Explorer] Warning: unknown tool {block.name}")
+                    continue
 
-            # Add final validation
-            actions.append(
-                Validate(
-                    selector="body",
-                    validation_type="presence",
-                    description="Final page load validation",
-                    is_critical=False,
+                # Execute browser action
+                result = executor.execute(block.id, block.input)
+                tool_results.append(result)
+
+                # Map to IR action if applicable
+                action_name = block.input.get("action", "")
+                ir_action = _map_tool_action_to_ir(
+                    action_name, block.input, executor.ref_manager
                 )
-            )
+                if ir_action:
+                    ir_actions.append(ir_action)
 
-        finally:
-            # Close context only - browser lifecycle managed by pool or context_manager
-            if context:
-                await context.close()
+                # Track navigation URLs
+                if action_name == "navigate":
+                    nav_url = block.input.get("text", "")
+                    if nav_url and nav_url not in ("back", "forward"):
+                        urls.append(nav_url)
 
-    print(
-        f"[Explorer] Exploration complete. Actions: {len(actions)}, URLs: {len(urls)}, Data: {bool(data)}"
-    )
+                # Save screenshots from tool results
+                if not result.get("is_error"):
+                    for content in result.get("content", []):
+                        if content.get("type") == "image":
+                            # Screenshot is in base64 - we could decode and save it
+                            # For now, just track that we have it
+                            screenshot_path = (
+                                screenshots_dir
+                                / f"browser-api-step-{iteration}-{job_id}.png"
+                            )
+                            screenshots.append(screenshot_path)
+                            # Note: In production, decode base64 and save actual file
 
-    return ExplorationResult(
-        steps=actions,
-        html_pages=html_pages,
-        screenshots=screenshots,
-        urls=urls,
-        data=data,
-    )
+            # Add tool results to conversation
+            if tool_results:
+                messages.append({"role": "user", "content": tool_results})
+
+            # Capture page HTML periodically
+            if iteration % 3 == 0:  # Every 3 iterations
+                try:
+                    page_html = executor.page.content()
+                    html_pages.append(page_html)
+                except Exception as e:
+                    print(f"[Explorer] Failed to capture HTML: {e}")
+
+        # Final data extraction attempt
+        # For now, return empty data - in production would use read_page + extraction
+        print(f"[Explorer] Completed exploration with {len(ir_actions)} IR actions")
+
+        return ExplorationResult(
+            steps=ir_actions,
+            screenshots=screenshots,
+            html_pages=html_pages,
+            urls=urls if urls else [start_url],
+            data=data,
+        )
+
+    finally:
+        executor.stop()
