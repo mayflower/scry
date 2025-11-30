@@ -15,11 +15,15 @@ from ..self_heal.diagnose import propose_patch
 from ..self_heal.patch import merge_codegen_options
 
 
-def run_job_with_id(job_id: str, req: ScrapeRequest) -> ScrapeResponse:
+async def run_job_with_id(  # noqa: PLR0912, PLR0915
+    job_id: str,
+    req: ScrapeRequest,
+    progress_callback: Any | None = None,
+) -> ScrapeResponse:
     """Unified implementation with exploration, code generation, and self-healing.
 
     Combines the best of all versions:
-    - Agentic exploration from V2
+    - Agentic exploration from V2 (now async)
     - Code generation from V3/V4
     - Self-healing loop from V4
     """
@@ -38,18 +42,35 @@ def run_job_with_id(job_id: str, req: ScrapeRequest) -> ScrapeResponse:
 
     # Perform agentic exploration to discover the scraping path
     execution_log.append("exploring")
-    res = explore_with_playwright(
+    max_exploration_steps = int(os.getenv("MAX_EXPLORATION_STEPS", "20"))
+    res = await explore_with_playwright(
         start_url=start_url,
         nl_request=req.nl_request,
         schema=req.output_schema,
         screenshots_dir=screenshots_dir,
         html_dir=html_dir,
         job_id=job_id,
-        max_steps=int(os.getenv("MAX_EXPLORATION_STEPS", "20")),
+        max_steps=max_exploration_steps,
         headless=settings.headless,
         login_params=req.login_params,
+        progress_callback=progress_callback,
     )
     execution_log.append("exploration_complete")
+
+    # Emit progress for post-exploration phases
+    if progress_callback:
+        try:
+            progress_callback(
+                {
+                    "step": max_exploration_steps,
+                    "max_steps": max_exploration_steps + 5,  # Add phases for codegen/execution
+                    "action": "exploration_complete",
+                    "url": start_url,
+                    "status": "optimizing",
+                }
+            )
+        except Exception:
+            pass
 
     # Store exploration data for validation
     exploration_data = res.data if hasattr(res, "data") else None
@@ -112,23 +133,15 @@ def run_job_with_id(job_id: str, req: ScrapeRequest) -> ScrapeResponse:
                 execution_log.append("validation_failed")
                 # Extract validation failure from stderr/stdout
                 validation_error = None
-                if (
-                    script_result.stderr
-                    and "CRITICAL validation failed:" in script_result.stderr
-                ):
+                if script_result.stderr and "CRITICAL validation failed:" in script_result.stderr:
                     validation_error = script_result.stderr
-                elif (
-                    script_result.stdout
-                    and "CRITICAL validation failed:" in script_result.stdout
-                ):
+                elif script_result.stdout and "CRITICAL validation failed:" in script_result.stdout:
                     validation_error = script_result.stdout
 
                 # Treat validation failure like any other error for self-healing
                 if attempt + 1 < settings.max_repair_attempts:
                     last_stderr = (
-                        validation_error
-                        or script_result.stderr
-                        or "Validation checkpoint failed"
+                        validation_error or script_result.stderr or "Validation checkpoint failed"
                     )
                     patch = propose_patch(attempt + 1, last_stderr, None)
                     options = merge_codegen_options(options, patch)
@@ -209,13 +222,10 @@ def run_job_with_id(job_id: str, req: ScrapeRequest) -> ScrapeResponse:
                     if v != ev:
                         mismatch = True
                         break
-                else:
-                    if _norm(v) != _norm(ev):
-                        mismatch = True
-                        break
-            execution_log.append(
-                "validation_ok" if not mismatch else "validation_mismatch"
-            )
+                elif _norm(v) != _norm(ev):
+                    mismatch = True
+                    break
+            execution_log.append("validation_ok" if not mismatch else "validation_mismatch")
     except Exception:
         pass
 
@@ -223,9 +233,9 @@ def run_job_with_id(job_id: str, req: ScrapeRequest) -> ScrapeResponse:
     return ScrapeResponse(job_id=job_id, execution_log=execution_log, data=data)
 
 
-def run_job(req: ScrapeRequest) -> ScrapeResponse:
+async def run_job(req: ScrapeRequest) -> ScrapeResponse:
     """Main entry point for scraping jobs."""
-    return run_job_with_id(str(uuid.uuid4()), req)
+    return await run_job_with_id(str(uuid.uuid4()), req)
 
 
 def _finalize_from_artifacts(job_id: str, req: ScrapeRequest) -> dict[str, Any]:
@@ -234,7 +244,5 @@ def _finalize_from_artifacts(job_id: str, req: ScrapeRequest) -> dict[str, Any]:
     html_pages = []
     if html_file.exists():
         html_pages.append(html_file.read_text(encoding="utf-8"))
-    base_url = (
-        req.target_urls[0] if (req.target_urls and len(req.target_urls) > 0) else None
-    )
+    base_url = req.target_urls[0] if (req.target_urls and len(req.target_urls) > 0) else None
     return extract_data(req.output_schema, html_pages, base_url=base_url)

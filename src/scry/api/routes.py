@@ -9,17 +9,16 @@ from ..core.executor.runner import run_job
 from ..runtime.events import get_bus
 from .dto import ScrapeRequest, ScrapeResponse
 
-
 router = APIRouter()
 
 
 @router.post("/scrape", response_model=ScrapeResponse)
-def scrape(req: ScrapeRequest) -> ScrapeResponse:
+async def scrape(req: ScrapeRequest) -> ScrapeResponse:
     try:
-        return run_job(req)
+        return await run_job(req)
     except Exception as e:
         # No logging; raise API error with minimal message
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/llm/ready")

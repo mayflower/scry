@@ -17,6 +17,8 @@ dependencies = [
   "redis>=5",
   "jsonschema>=4.22",
   "anthropic>=0.29",
+  "fastmcp>=2.0",
+  "pillow>=10.0",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +29,7 @@ dev = [
 
 [project.scripts]
 scry-api = "scry.app:app"
+scry-mcp = "scry.mcp_server:main"
 
 [tool.uvicorn]
 factory = true

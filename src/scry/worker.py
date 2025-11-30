@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 
@@ -17,7 +18,11 @@ def _worker_loop() -> None:
         try:
             job_id = msg.get("job_id")
             req = ScrapeRequest(**msg["request"])  # type: ignore[index]
-            result = run_job_with_id(job_id, req) if job_id else run_job(req)
+            # Run async functions from sync worker thread
+            if job_id:
+                result = asyncio.run(run_job_with_id(job_id, req))
+            else:
+                result = asyncio.run(run_job(req))
             bus.set_result(result.job_id, json.loads(result.model_dump_json()))
         except Exception:
             # Swallow and continue (no logs per constraints)
