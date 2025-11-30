@@ -76,6 +76,137 @@ The LLM will automatically:
 3. Submit the form
 4. Proceed with the main task after authentication
 
+## MCP Server
+
+Scry can be run as an [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server, allowing LLM agents to use browser automation as a tool.
+
+### Starting the MCP Server
+
+```bash
+# Start MCP server (default port 8085)
+python -m scry.mcp_server
+
+# Or with custom configuration
+MCP_PORT=8085 MCP_HOST=0.0.0.0 python -m scry.mcp_server
+```
+
+### The `browser` Tool
+
+The MCP server exposes a single powerful tool called `browser`:
+
+```json
+{
+  "name": "browser",
+  "description": "Automate browser tasks using LLM-driven exploration and code generation",
+  "parameters": {
+    "url": "The starting URL to navigate to",
+    "task": "Natural language description of what to accomplish",
+    "output_schema": "JSON schema describing expected output data structure",
+    "login_username": "Optional username for form-based login",
+    "login_password": "Optional password for form-based login",
+    "max_steps": "Maximum exploration steps (default 20)"
+  }
+}
+```
+
+**Example tool call:**
+```json
+{
+  "url": "https://news.ycombinator.com",
+  "task": "Extract the top 5 story titles from the front page",
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "titles": {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": "List of story titles"
+      }
+    }
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "job_id": "abc123",
+  "data": {
+    "titles": ["Story 1", "Story 2", "Story 3", "Story 4", "Story 5"]
+  },
+  "execution_log": ["received", "exploring", "exploration_complete", "codegen", "executing_script", "done"],
+  "status": "success",
+  "last_screenshot_b64": "iVBORw0KGgo..."
+}
+```
+
+### MCP Client Integration
+
+**Python (using langchain-mcp-adapters):**
+```python
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+client = MultiServerMCPClient({
+    "scry": {
+        "url": "http://localhost:8085/mcp",
+        "transport": "streamable_http",
+    }
+})
+
+tools = await client.get_tools()
+# tools now contains the 'browser' tool
+```
+
+**Using with Claude Desktop or other MCP hosts:**
+```json
+{
+  "mcpServers": {
+    "scry": {
+      "url": "http://localhost:8085/mcp",
+      "transport": "streamable-http"
+    }
+  }
+}
+```
+
+## Async Browser Pool
+
+Scry includes an async browser pool that eliminates cold-start latency by pre-launching browsers.
+
+### Performance
+
+| Metric | Without Pool | With Pool |
+|--------|-------------|-----------|
+| First request | 3-5s | 0.3s (pool init) + 0.05s (acquire) |
+| Subsequent requests | 3-5s | ~0.05s |
+
+### Configuration
+
+```bash
+# Enable/disable pool (default: true)
+BROWSER_USE_POOL=true
+
+# Number of pre-launched browsers (default: 2)
+BROWSER_POOL_SIZE=2
+
+# Recycle browser after N requests (default: 100)
+BROWSER_MAX_REQUESTS=100
+
+# Recycle browser after N seconds (default: 3600)
+BROWSER_MAX_AGE=3600
+
+# Health check interval in seconds (default: 60)
+BROWSER_HEALTH_CHECK_INTERVAL=60
+```
+
+### How It Works
+
+1. On first request, the pool initializes N browsers asynchronously (~0.3s)
+2. Requests acquire a browser from the pool (~0.05s vs 3-5s cold start)
+3. After use, browsers return to the pool for reuse
+4. Unhealthy browsers are automatically replaced
+5. Browsers are recycled after max requests or max age to prevent memory leaks
+
 ## Docker Compose Setup
 
 ```bash
@@ -98,7 +229,7 @@ ANTHROPIC_API_KEY=your_key_here
 **Required:**
 - `ANTHROPIC_API_KEY` or `CLAUDE_API_KEY`
 
-**Optional:**
+**Optional - General:**
 - `NAV_BACKEND`: `playwright` (native agentic exploration, default)
 - `HEADLESS`: `true` (default)
 - `EVENT_BACKEND`: `redis` (for Docker) or `inmemory` (local)
@@ -106,6 +237,17 @@ ANTHROPIC_API_KEY=your_key_here
 - `ARTIFACTS_ROOT`: `/app/artifacts`
 - `MAX_EXPLORATION_STEPS`: Max exploration steps (default 20)
 - `MAX_REPAIR_ATTEMPTS`: Self-healing retry limit (default 20)
+
+**Optional - MCP Server:**
+- `MCP_PORT`: Port for MCP server (default 8085)
+- `MCP_HOST`: Host to bind MCP server (default 0.0.0.0)
+
+**Optional - Browser Pool:**
+- `BROWSER_USE_POOL`: Enable browser pool (default true)
+- `BROWSER_POOL_SIZE`: Number of pre-launched browsers (default 2)
+- `BROWSER_MAX_REQUESTS`: Recycle after N requests (default 100)
+- `BROWSER_MAX_AGE`: Recycle after N seconds (default 3600)
+- `BROWSER_HEALTH_CHECK_INTERVAL`: Health check interval in seconds (default 60)
 
 ## Artifacts
 
