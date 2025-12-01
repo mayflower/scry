@@ -193,3 +193,7 @@ playwright-downloads/
 
 # Python virtual environments
 smartscraper/
+
+# uv (not used for package management)
+uv.lock
+.venv/
