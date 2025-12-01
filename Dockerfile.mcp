@@ -1,0 +1,28 @@
+# Dockerfile for Scry MCP Server
+# Uses Playwright Python image with Chromium pre-installed
+
+FROM mcr.microsoft.com/playwright/python:v1.49.0-noble
+
+WORKDIR /app
+
+# Copy scry source code
+COPY services/scry/ .
+
+# Install scry with MCP dependencies
+RUN pip install --no-cache-dir -e . && \
+    playwright install chromium
+
+# Create artifacts directory
+RUN mkdir -p /app/artifacts
+
+# Environment variables
+ENV PYTHONUNBUFFERED=1
+ENV HEADLESS=true
+ENV MCP_PORT=8085
+ENV MCP_HOST=0.0.0.0
+
+# Expose MCP port
+EXPOSE 8085
+
+# Run the MCP server
+CMD ["python", "-m", "scry.mcp_server"]
