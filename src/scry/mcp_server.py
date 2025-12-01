@@ -16,11 +16,19 @@ import uuid
 from typing import Any
 
 from fastmcp import Context, FastMCP
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from .api.dto import ScrapeRequest
 from .core.executor.runner import run_job_with_id
 
 mcp = FastMCP(name="scry-browser")
+
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health_check(request: Request) -> JSONResponse:  # noqa: ARG001
+    """Health check endpoint for Kubernetes probes."""
+    return JSONResponse({"status": "healthy", "service": "scry-mcp"})
 
 
 @mcp.tool
