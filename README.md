@@ -1,4 +1,4 @@
-**IMPORTANT: ** This project is published as open source under the MIT license.
+**IMPORTANT:** This project is published as open source under the MIT license.
 We do **not**, however, currently provide any support, including the possibility to file
 issues. We are open to accepting pull requests that fix bugs or add useful functionality,
 though.
