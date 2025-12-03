@@ -1,3 +1,8 @@
+**IMPORTANT: ** This project is published as open source under the MIT license.
+We do **not**, however, currently provide any support, including the possibility to file
+issues. We are open to accepting pull requests that fix bugs or add useful functionality,
+though.
+
 # Scry - Agentic Web Scraper
 
 **Scry** (from "scrying" - the practice of seeing hidden information) is an intelligent web scraper with LLM-driven exploration and self-healing capabilities.
@@ -338,6 +343,6 @@ graph TB
 - `src/scry/runtime/` - Event bus and storage
 - `src/scry/worker.py` - Async job processor
 
-## License
+# License
 
-MIT
+You are free to use this project under the permissions of the [MIT License](./LICENSE.md).
