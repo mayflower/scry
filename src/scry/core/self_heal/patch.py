@@ -6,12 +6,12 @@ This module exists to keep the API stable when moving to more complex patches.
 
 from __future__ import annotations
 
-from typing import Dict, Any
+from typing import Any
 
 
 def merge_codegen_options(
-    base: Dict[str, Any], patch: Dict[str, Any]
-) -> Dict[str, Any]:
+    base: dict[str, Any], patch: dict[str, Any]
+) -> dict[str, Any]:
     out = dict(base)
     out.update({k: v for k, v in patch.items() if v is not None})
     return out

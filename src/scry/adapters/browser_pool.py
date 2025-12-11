@@ -80,7 +80,9 @@ class AsyncBrowserPool:
         self._health_task: asyncio.Task | None = None
 
     @classmethod
-    async def get_instance(cls, config: BrowserPoolConfig | None = None) -> AsyncBrowserPool:
+    async def get_instance(
+        cls, config: BrowserPoolConfig | None = None
+    ) -> AsyncBrowserPool:
         """Get or create the singleton browser pool instance."""
         if cls._lock is None:
             cls._lock = asyncio.Lock()
@@ -101,7 +103,9 @@ class AsyncBrowserPool:
             if self._initialized:
                 return
 
-            print(f"[BrowserPool] Initializing async pool with {self.config.pool_size} browsers")
+            print(
+                f"[BrowserPool] Initializing async pool with {self.config.pool_size} browsers"
+            )
             start = time.perf_counter()
 
             # Create browsers concurrently for faster initialization
@@ -114,7 +118,9 @@ class AsyncBrowserPool:
                 else:
                     self._all_browsers.append(result)
                     await self._pool.put(result)
-                    print(f"[BrowserPool] Browser {i + 1}/{self.config.pool_size} ready")
+                    print(
+                        f"[BrowserPool] Browser {i + 1}/{self.config.pool_size} ready"
+                    )
 
             elapsed = time.perf_counter() - start
             print(
@@ -162,7 +168,9 @@ class AsyncBrowserPool:
 
             # Check request count
             if pooled.request_count >= self.config.max_requests_per_browser:
-                print(f"[BrowserPool] Browser exceeded max requests ({pooled.request_count})")
+                print(
+                    f"[BrowserPool] Browser exceeded max requests ({pooled.request_count})"
+                )
                 return False
 
             # Check if browser is connected
@@ -282,7 +290,9 @@ class AsyncBrowserPool:
                     await self._pool.put(pooled)
                 else:
                     # Replace unhealthy browser
-                    print("[BrowserPool] Releasing unhealthy browser, creating replacement")
+                    print(
+                        "[BrowserPool] Releasing unhealthy browser, creating replacement"
+                    )
                     await self._close_browser(pooled)
                     async with self._pool_lock:
                         if pooled in self._all_browsers:

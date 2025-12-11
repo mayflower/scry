@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Dockerfile for Scry MCP Server
 # Uses Playwright Python image with Chromium pre-installed
 
@@ -8,8 +9,9 @@ WORKDIR /app
 # Copy scry source code
 COPY services/scry/ .
 
-# Install scry with MCP dependencies
-RUN pip install --no-cache-dir -e . && \
+# Install scry with MCP dependencies (cached)
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -e . && \
     playwright install chromium
 
 # Create artifacts directory

@@ -165,7 +165,9 @@ class TestInMemoryBus:
                     "properties": {
                         "nested": {
                             "type": "object",
-                            "properties": {"deep": {"type": "array", "items": {"type": "string"}}},
+                            "properties": {
+                                "deep": {"type": "array", "items": {"type": "string"}}
+                            },
                         }
                     },
                 },
@@ -261,7 +263,8 @@ class TestGetBus:
     def test_get_redis_bus(self):
         """Test getting Redis bus."""
         with patch.dict(
-            "os.environ", {"EVENT_BACKEND": "redis", "REDIS_URL": "redis://localhost:6379"}
+            "os.environ",
+            {"EVENT_BACKEND": "redis", "REDIS_URL": "redis://localhost:6379"},
         ):
             try:
                 bus = get_bus()

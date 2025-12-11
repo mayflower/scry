@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
-from ...adapters.anthropic import has_api_key, complete_json
+from ...adapters.anthropic import complete_json, has_api_key
 
 
 def extract_from_text(
     nl_request: str,
-    parameters: Dict[str, Any] | None,
-    schema: Dict[str, Any],
+    parameters: dict[str, Any] | None,
+    schema: dict[str, Any],
     text: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     params = parameters or {}
     sys = (
         "Extract structured JSON matching the provided schema from the given text.\n"

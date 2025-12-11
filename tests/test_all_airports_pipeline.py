@@ -20,7 +20,6 @@ from typing import Any
 
 import requests
 
-
 BASE_URL = os.getenv("SMARTR_BASE_URL", "http://127.0.0.1:8000")
 TIMEOUT = int(os.getenv("SMARTR_TIMEOUT", "300"))
 
@@ -83,7 +82,9 @@ def get_flight_schema() -> dict[str, Any]:
     }
 
 
-def run_exploration(airport_name: str, airport_info: dict[str, str]) -> dict[str, Any] | None:
+def run_exploration(
+    airport_name: str, airport_info: dict[str, str]
+) -> dict[str, Any] | None:
     """Run exploration phase for an airport."""
     print(f"\n{'=' * 70}")
     print(f"EXPLORATION: {airport_info['name']}")
@@ -197,7 +198,9 @@ def run_generated_script(script_path: Path, job_id: str) -> dict[str, Any] | Non
         return None
 
 
-def compare_results(exploration_data: dict[str, Any], script_data: dict[str, Any]) -> bool:
+def compare_results(
+    exploration_data: dict[str, Any], script_data: dict[str, Any]
+) -> bool:
     """Compare exploration and script results."""
     if not exploration_data or not script_data:
         return False
@@ -214,12 +217,18 @@ def compare_results(exploration_data: dict[str, Any], script_data: dict[str, Any
         return True
 
     if not script_flights and exp_flights:
-        print(f"   ❌ Script found no flights while exploration found {len(exp_flights)}")
+        print(
+            f"   ❌ Script found no flights while exploration found {len(exp_flights)}"
+        )
         return False
 
     # Compare flight numbers
-    exp_numbers = {f.get("flight_number") for f in exp_flights if f.get("flight_number")}
-    script_numbers = {f.get("flight_number") for f in script_flights if f.get("flight_number")}
+    exp_numbers = {
+        f.get("flight_number") for f in exp_flights if f.get("flight_number")
+    }
+    script_numbers = {
+        f.get("flight_number") for f in script_flights if f.get("flight_number")
+    }
 
     if exp_numbers and script_numbers:
         overlap = exp_numbers & script_numbers
@@ -246,7 +255,9 @@ def compare_results(exploration_data: dict[str, Any], script_data: dict[str, Any
     return False
 
 
-def test_airport_pipeline(airport_name: str, airport_info: dict[str, str]) -> dict[str, Any]:
+def test_airport_pipeline(
+    airport_name: str, airport_info: dict[str, str]
+) -> dict[str, Any]:
     """Test complete pipeline for one airport."""
     result = {
         "airport": airport_name,

@@ -11,7 +11,6 @@ import queue
 import threading
 from typing import Any
 
-
 JOB_QUEUE = "scrape_jobs"
 
 

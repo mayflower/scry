@@ -441,9 +441,7 @@ class TestValidationInRunner:
                 data={"title": "Test"},
             )
 
-            with patch(
-                "scry.core.executor.runner.propose_patch"
-            ) as mock_patch:
+            with patch("scry.core.executor.runner.propose_patch") as mock_patch:
                 mock_patch.return_value = {"extra_wait_ms": 1000}
 
                 result = run_job_with_id("test-job", req)

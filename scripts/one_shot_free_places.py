@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import os
 import sys
-import requests
 
+import requests
 
 BASE = os.getenv("SMARTR_BASE_URL", "http://127.0.0.1:8000")
 
@@ -15,10 +15,10 @@ payload = {
         "type": "object",
         "properties": {
             "facility": {"type": "string"},
-            "free_places": {"type": "integer"}
-        }
+            "free_places": {"type": "integer"},
+        },
     },
-    "target_urls": ["https://www.parkundride.de/"]
+    "target_urls": ["https://www.parkundride.de/"],
 }
 
 try:
@@ -34,4 +34,3 @@ except Exception as e:
     except Exception:
         print(str(e))
     sys.exit(1)
-

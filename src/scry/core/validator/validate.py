@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 try:
     import jsonschema
@@ -10,9 +10,9 @@ except Exception:  # pragma: no cover
     jsonschema = None  # type: ignore
 
 
-def _prune_object(schema: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, Any]:
+def _prune_object(schema: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
     props = schema.get("properties", {}) or {}
-    out: Dict[str, Any] = {}
+    out: dict[str, Any] = {}
     for k, v in data.items():
         if k in props:
             out[k] = v
@@ -20,8 +20,8 @@ def _prune_object(schema: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, Any
 
 
 def normalize_against_schema(
-    schema: Dict[str, Any], data: Dict[str, Any]
-) -> Dict[str, Any]:
+    schema: dict[str, Any], data: dict[str, Any]
+) -> dict[str, Any]:
     st = schema.get("type")
     if st == "object" and isinstance(data, dict):
         data = _prune_object(schema, data)

@@ -96,7 +96,9 @@ async def browser(
         )
         if screenshot:
             callback_state["last_screenshot_b64"] = screenshot
-            print(f"[MCP] Screenshot captured in callback_state: {len(screenshot)} bytes")
+            print(
+                f"[MCP] Screenshot captured in callback_state: {len(screenshot)} bytes"
+            )
 
         # Avoid duplicate progress reports
         if step <= callback_state["step"]:

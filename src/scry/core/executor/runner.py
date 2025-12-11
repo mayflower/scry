@@ -63,7 +63,8 @@ async def run_job_with_id(  # noqa: PLR0912, PLR0915
             progress_callback(
                 {
                     "step": max_exploration_steps,
-                    "max_steps": max_exploration_steps + 5,  # Add phases for codegen/execution
+                    "max_steps": max_exploration_steps
+                    + 5,  # Add phases for codegen/execution
                     "action": "exploration_complete",
                     "url": start_url,
                     "status": "optimizing",
@@ -133,15 +134,23 @@ async def run_job_with_id(  # noqa: PLR0912, PLR0915
                 execution_log.append("validation_failed")
                 # Extract validation failure from stderr/stdout
                 validation_error = None
-                if script_result.stderr and "CRITICAL validation failed:" in script_result.stderr:
+                if (
+                    script_result.stderr
+                    and "CRITICAL validation failed:" in script_result.stderr
+                ):
                     validation_error = script_result.stderr
-                elif script_result.stdout and "CRITICAL validation failed:" in script_result.stdout:
+                elif (
+                    script_result.stdout
+                    and "CRITICAL validation failed:" in script_result.stdout
+                ):
                     validation_error = script_result.stdout
 
                 # Treat validation failure like any other error for self-healing
                 if attempt + 1 < settings.max_repair_attempts:
                     last_stderr = (
-                        validation_error or script_result.stderr or "Validation checkpoint failed"
+                        validation_error
+                        or script_result.stderr
+                        or "Validation checkpoint failed"
                     )
                     patch = propose_patch(attempt + 1, last_stderr, None)
                     options = merge_codegen_options(options, patch)
@@ -225,7 +234,9 @@ async def run_job_with_id(  # noqa: PLR0912, PLR0915
                 elif _norm(v) != _norm(ev):
                     mismatch = True
                     break
-            execution_log.append("validation_ok" if not mismatch else "validation_mismatch")
+            execution_log.append(
+                "validation_ok" if not mismatch else "validation_mismatch"
+            )
     except Exception:
         pass
 
@@ -244,5 +255,7 @@ def _finalize_from_artifacts(job_id: str, req: ScrapeRequest) -> dict[str, Any]:
     html_pages = []
     if html_file.exists():
         html_pages.append(html_file.read_text(encoding="utf-8"))
-    base_url = req.target_urls[0] if (req.target_urls and len(req.target_urls) > 0) else None
+    base_url = (
+        req.target_urls[0] if (req.target_urls and len(req.target_urls) > 0) else None
+    )
     return extract_data(req.output_schema, html_pages, base_url=base_url)

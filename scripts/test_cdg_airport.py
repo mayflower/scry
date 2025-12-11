@@ -8,7 +8,6 @@ import os
 import sys
 from typing import Any
 
-
 try:
     import requests
 except ImportError:

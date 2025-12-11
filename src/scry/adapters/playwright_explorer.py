@@ -179,7 +179,9 @@ async def _get_page_state(page: Page) -> dict[str, Any]:
 
         # Scan all iframes for consent dialogs
         frames = page.frames
-        for idx, frame in enumerate(frames[1:], start=1):  # Skip main frame (already done)
+        for idx, frame in enumerate(
+            frames[1:], start=1
+        ):  # Skip main frame (already done)
             try:
                 frame_url = frame.url
                 # Only scan frames that might contain consent dialogs
@@ -326,7 +328,9 @@ def _use_browser_pool() -> bool:
 
 
 @asynccontextmanager
-async def _direct_launch(headless: bool) -> AsyncGenerator[tuple[Browser, Playwright], None]:
+async def _direct_launch(
+    headless: bool,
+) -> AsyncGenerator[tuple[Browser, Playwright], None]:
     """Direct browser launch without pool (fallback mode)."""
     p = await async_playwright().start()
     browser = await p.chromium.launch(headless=headless)
@@ -464,7 +468,9 @@ async def explore_with_playwright(  # noqa: PLR0912, PLR0915
                         # Check domain restriction
                         nav_domain = urlparse(nav_url).netloc.removeprefix("www.")
                         if target_domain not in nav_domain:
-                            print(f"[Explorer] Skipping navigation to different domain: {nav_url}")
+                            print(
+                                f"[Explorer] Skipping navigation to different domain: {nav_url}"
+                            )
                             continue
 
                         await page.goto(nav_url, wait_until="domcontentloaded")
@@ -483,13 +489,19 @@ async def explore_with_playwright(  # noqa: PLR0912, PLR0915
                                 # Iframe - get the frame by index
                                 frames = page.frames
                                 if 0 <= frame_idx < len(frames):
-                                    await frames[frame_idx].click(selector, timeout=5000)
+                                    await frames[frame_idx].click(
+                                        selector, timeout=5000
+                                    )
                                     print(f"[Explorer] Clicked in iframe {frame_idx}")
                                 else:
-                                    print(f"[Explorer] Invalid frame index: {frame_idx}")
+                                    print(
+                                        f"[Explorer] Invalid frame index: {frame_idx}"
+                                    )
                                     continue
                             actions.append(Click(selector=selector))
-                            await page.wait_for_load_state("domcontentloaded", timeout=5000)
+                            await page.wait_for_load_state(
+                                "domcontentloaded", timeout=5000
+                            )
 
                     elif action_type == "fill":
                         selector = action.get("selector", "")
@@ -504,7 +516,9 @@ async def explore_with_playwright(  # noqa: PLR0912, PLR0915
                         if selector and value:
                             await page.select_option(selector, value)
                             actions.append(Select(selector=selector, value=value))
-                            await page.wait_for_load_state("domcontentloaded", timeout=5000)
+                            await page.wait_for_load_state(
+                                "domcontentloaded", timeout=5000
+                            )
 
                     elif action_type == "hover":
                         selector = action.get("selector", "")
@@ -529,7 +543,9 @@ async def explore_with_playwright(  # noqa: PLR0912, PLR0915
                         file_path = action.get("file_path", "")
                         if selector and file_path:
                             await page.set_input_files(selector, file_path)
-                            actions.append(Upload(selector=selector, file_path=file_path))
+                            actions.append(
+                                Upload(selector=selector, file_path=file_path)
+                            )
 
                     elif action_type == "extract":
                         print(f"[Explorer] Extracting data at step {step}")
@@ -540,7 +556,9 @@ async def explore_with_playwright(  # noqa: PLR0912, PLR0915
                     # Capture state after action
                     await page.wait_for_timeout(1000)  # Brief wait for content
 
-                    screenshot_path = screenshots_dir / f"exploration-step-{step}-{job_id}.png"
+                    screenshot_path = (
+                        screenshots_dir / f"exploration-step-{step}-{job_id}.png"
+                    )
                     screenshot_bytes = await page.screenshot(full_page=True)
                     screenshot_path.write_bytes(screenshot_bytes)
                     screenshots.append(screenshot_path)
@@ -558,7 +576,9 @@ async def explore_with_playwright(  # noqa: PLR0912, PLR0915
                                     "step": step,
                                     "max_steps": max_steps,
                                     "action": action_type,
-                                    "screenshot_b64": _compress_screenshot(screenshot_bytes),
+                                    "screenshot_b64": _compress_screenshot(
+                                        screenshot_bytes
+                                    ),
                                     "url": current_url,
                                     "status": "exploring",
                                 }

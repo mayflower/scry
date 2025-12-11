@@ -6,12 +6,13 @@ execution fails. Hooks for Anthropic Claude can be added later.
 
 from __future__ import annotations
 
-from typing import Dict, Any
-from ...adapters.anthropic import has_api_key, complete_json
+from typing import Any
+
+from ...adapters.anthropic import complete_json, has_api_key
 
 
-def _heuristic_patch(attempt: int, stderr: str | None) -> Dict[str, Any]:
-    opts: Dict[str, Any] = {}
+def _heuristic_patch(attempt: int, stderr: str | None) -> dict[str, Any]:
+    opts: dict[str, Any] = {}
     text = (stderr or "").lower()
 
     # First attempts: try load-state waits and a short extra wait
@@ -32,7 +33,7 @@ def _heuristic_patch(attempt: int, stderr: str | None) -> Dict[str, Any]:
     return opts
 
 
-def propose_patch(attempt: int, stderr: str | None, html: str | None) -> Dict[str, Any]:
+def propose_patch(attempt: int, stderr: str | None, html: str | None) -> dict[str, Any]:
     if not has_api_key():
         return _heuristic_patch(attempt, stderr)
     try:

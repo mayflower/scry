@@ -6,7 +6,6 @@ import pytest
 from scry.api.dto import ScrapeRequest
 from scry.core.executor.runner import run_job
 
-
 e2e = pytest.mark.e2e
 
 
@@ -37,12 +36,18 @@ def test_parkundride_tiefgarage_moosach_free_places():
     assert res.data["free_places"] >= 0
 
     # Ensure the validation step ran; if mismatch it should still be recorded
-    assert any(flag in res.execution_log for flag in ("validation_ok", "validation_mismatch")), (
-        res.execution_log
-    )
+    assert any(
+        flag in res.execution_log for flag in ("validation_ok", "validation_mismatch")
+    ), res.execution_log
 
     # Basic sanity on execution phases
     assert any(
         s in res.execution_log
-        for s in ("exploring", "path_compressed", "codegen", "executing_script", "script_done")
+        for s in (
+            "exploring",
+            "path_compressed",
+            "codegen",
+            "executing_script",
+            "script_done",
+        )
     ), res.execution_log

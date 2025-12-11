@@ -250,7 +250,7 @@ def main():
             # Try to get page title
             try:
                 data["title"] = page.title()
-            except:
+            except Exception:
                 data["title"] = None
             
             # Try to get main heading
@@ -258,7 +258,7 @@ def main():
                 h1 = page.query_selector("h1")
                 if h1:
                     data["heading"] = h1.text_content()
-            except:
+            except Exception:
                 data["heading"] = None
             
             # Try to find company name
@@ -268,7 +268,7 @@ def main():
                     data["company_found"] = True
                 else:
                     data["company_found"] = False
-            except:
+            except Exception:
                 data["company_found"] = False
             
             print(json.dumps(data, indent=2))

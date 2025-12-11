@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
-from playwright.sync_api import TimeoutError as PWTimeoutError, sync_playwright
+from playwright.sync_api import TimeoutError as PWTimeoutError
+from playwright.sync_api import sync_playwright
 
 from ..ir.model import (
     Click,

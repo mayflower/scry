@@ -7,7 +7,6 @@ import sys
 
 import requests
 
-
 BASE = os.getenv("SMARTR_BASE_URL", "http://127.0.0.1:8000")
 TIMEOUT = int(os.getenv("SMARTR_TIMEOUT", "600"))  # Airport sites can be slow
 

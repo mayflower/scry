@@ -32,4 +32,6 @@ class ScrapeResponse(BaseModel):
     execution_log: list[str]
     data: dict[str, Any]
     status: str = "completed"  # Default to completed for backward compatibility
-    last_screenshot_b64: str | None = None  # Latest compressed screenshot for UI streaming
+    last_screenshot_b64: str | None = (
+        None  # Latest compressed screenshot for UI streaming
+    )

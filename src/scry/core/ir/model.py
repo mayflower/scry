@@ -71,7 +71,9 @@ class Upload:
     file_path: str  # Path to file to upload
 
 
-PlanStep = Union[Navigate, Click, Fill, WaitFor, Validate, Select, Hover, KeyPress, Upload]
+PlanStep = Union[
+    Navigate, Click, Fill, WaitFor, Validate, Select, Hover, KeyPress, Upload
+]
 
 
 @dataclass

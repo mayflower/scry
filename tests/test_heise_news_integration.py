@@ -15,7 +15,9 @@ from scry.core.executor.runner import run_job_with_id
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY")
+@pytest.mark.skipif(
+    not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY"
+)
 def test_heise_news_extraction():
     """Extract the last 3 news items from heise.de.
 
@@ -37,7 +39,10 @@ def test_heise_news_extraction():
                     "type": "array",
                     "items": {
                         "type": "object",
-                        "properties": {"title": {"type": "string"}, "link": {"type": "string"}},
+                        "properties": {
+                            "title": {"type": "string"},
+                            "link": {"type": "string"},
+                        },
                     },
                 }
             },

@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 from ...adapters.anthropic import complete_json, has_api_key
 
 
 def synthesize_selectors(
     nl_request: str,
-    parameters: Dict[str, Any] | None,
-    schema: Dict[str, Any],
+    parameters: dict[str, Any] | None,
+    schema: dict[str, Any],
     html: str,
     url: str,
-) -> Dict[str, Dict[str, Any]]:
+) -> dict[str, dict[str, Any]]:
     """Ask Anthropic to propose CSS selectors for each schema field.
 
     Returns a dict mapping field -> {selector: str, regex?: str, attr?: str}
