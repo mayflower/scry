@@ -40,7 +40,7 @@ async def browser(
     login_username: str | None = None,
     login_password: str | None = None,
     max_steps: int = 20,
-) -> dict[str, Any]:
+):
     """Automate browser tasks using LLM-driven exploration and code generation.
 
     Use this tool for web scraping, form filling, and browser automation tasks.
@@ -137,13 +137,39 @@ async def browser(
         f"[MCP] Returning result with screenshot: {bool(final_screenshot)}, len={len(final_screenshot) if final_screenshot else 0}"
     )
 
-    return {
-        "job_id": result.job_id,
-        "data": result.data if result.data else {},
-        "execution_log": result.execution_log,
-        "status": result.status,
-        "last_screenshot_b64": final_screenshot,
-    }
+    # Import here to avoid linter removing "unused" imports at module level
+    from fastmcp.tools.tool import ToolResult  # noqa: PLC0415
+    from mcp.types import ImageContent, TextContent  # noqa: PLC0415
+
+    # Build content blocks - text summary + optional screenshot
+    content_blocks: list[TextContent | ImageContent] = [
+        TextContent(
+            type="text",
+            text=f"Browser task completed (job: {result.job_id}, status: {result.status})\n"
+            f"Execution: {' → '.join(result.execution_log)}",
+        )
+    ]
+
+    # Add screenshot as ImageContent if available
+    if final_screenshot:
+        content_blocks.append(
+            ImageContent(
+                type="image",
+                data=final_screenshot,
+                mimeType="image/png",
+            )
+        )
+
+    # Return ToolResult with both content blocks and structured data
+    return ToolResult(
+        content=content_blocks,
+        structured_content={
+            "job_id": result.job_id,
+            "data": result.data if result.data else {},
+            "execution_log": result.execution_log,
+            "status": result.status,
+        },
+    )
 
 
 def main() -> None:
