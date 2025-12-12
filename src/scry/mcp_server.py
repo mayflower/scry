@@ -11,6 +11,7 @@ progress streaming via ctx.report_progress(). Includes:
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import uuid
 from typing import Any
@@ -86,7 +87,14 @@ async def browser(
     callback_state = {"step": -1, "last_screenshot_b64": None}
 
     def progress_callback(data: dict[str, Any]) -> None:
-        """Sync callback that schedules async progress reporting and captures screenshots."""
+        """Sync callback that schedules async progress reporting and captures screenshots.
+
+        Embeds screenshot data as JSON in the progress notification's message field.
+        This approach works because:
+        - Progress callbacks are request-scoped (tied to call_tool())
+        - The message field is a string that can contain arbitrary JSON
+        - Client parses JSON to extract screenshot, step, action, status
+        """
         step = data.get("step", 0)
 
         # Capture the latest screenshot (always update, even on duplicate steps)
@@ -105,16 +113,35 @@ async def browser(
             return
         callback_state["step"] = step
 
+        status = data.get("status", "working")
+        action = data.get("action", "processing")
+
+        # Build JSON payload with all progress data including screenshot
+        progress_payload = {
+            "step": step,
+            "action": action,
+            "status": status,
+            "screenshot": screenshot or "",  # Empty string if no screenshot
+        }
+
         # Schedule progress report on the event loop (fire-and-forget)
         try:
             loop = asyncio.get_running_loop()
+
+            # Report progress with JSON payload in message field
             loop.create_task(  # noqa: RUF006
                 ctx.report_progress(
                     progress=step,
                     total=data.get("max_steps", max_steps + 5),
-                    message=f"{data.get('status', 'working')} - {data.get('action', 'processing')}",
+                    message=json.dumps(progress_payload),
                 )
             )
+
+            if screenshot:
+                print(
+                    f"[MCP] Sending progress with screenshot: step={step}, "
+                    f"screenshot_len={len(screenshot)}"
+                )
         except Exception as e:
             print(f"[MCP] Progress report failed: {e}")
 
@@ -141,12 +168,21 @@ async def browser(
     from fastmcp.tools.tool import ToolResult  # noqa: PLC0415
     from mcp.types import ImageContent, TextContent  # noqa: PLC0415
 
-    # Build content blocks - text summary + optional screenshot
+    # Build text content with summary AND extracted data
+    # (structured_content may not be preserved through all transport layers)
+    text_parts = [
+        f"Browser task completed (job: {result.job_id}, status: {result.status})",
+        f"Execution: {' → '.join(result.execution_log)}",
+    ]
+
+    # Include extracted data in text content for reliable transport
+    if result.data:
+        text_parts.append(f"\nExtracted data:\n```json\n{json.dumps(result.data, indent=2)}\n```")
+
     content_blocks: list[TextContent | ImageContent] = [
         TextContent(
             type="text",
-            text=f"Browser task completed (job: {result.job_id}, status: {result.status})\n"
-            f"Execution: {' → '.join(result.execution_log)}",
+            text="\n".join(text_parts),
         )
     ]
 
