@@ -78,6 +78,164 @@ def _compress_screenshot(png_bytes: bytes, max_width: int = 256) -> str:
         return base64.b64encode(png_bytes).decode("utf-8")
 
 
+# Common GDPR consent button selectors (German and English)
+CONSENT_BUTTON_SELECTORS = [
+    # Generic consent buttons
+    'button[id*="accept"]',
+    'button[id*="agree"]',
+    'button[id*="consent"]',
+    'button[class*="accept"]',
+    'button[class*="agree"]',
+    'button[class*="consent"]',
+    'a[id*="accept"]',
+    'a[class*="accept"]',
+    # German text patterns
+    'button:has-text("Alle akzeptieren")',
+    'button:has-text("Akzeptieren")',
+    'button:has-text("Zustimmen")',
+    'button:has-text("Einverstanden")',
+    'button:has-text("Alle Cookies akzeptieren")',
+    'button:has-text("Alles akzeptieren")',
+    # English text patterns
+    'button:has-text("Accept all")',
+    'button:has-text("Accept All")',
+    'button:has-text("Accept")',
+    'button:has-text("Agree")',
+    'button:has-text("I agree")',
+    'button:has-text("Allow all")',
+    'button:has-text("OK")',
+    # Specific site patterns
+    '#gdpr-banner button[class*="accept"]',
+    '#gdpr-banner button:has-text("Akzeptieren")',
+    '#consentBanner button[class*="accept"]',
+    '[data-testid="consent-accept"]',
+    '[data-testid="cookie-accept"]',
+    '.cookie-banner button[class*="accept"]',
+    '.consent-banner button[class*="accept"]',
+    # SP consent (used by many German sites)
+    'button[title="Zustimmen"]',
+    'button[title="Accept"]',
+]
+
+# Selectors for consent dialogs to remove via JS if clicking fails
+CONSENT_DIALOG_SELECTORS = [
+    '#gdpr-banner',
+    '#consentBanner',
+    '#cookie-banner',
+    '.cookie-banner',
+    '.consent-banner',
+    '.gdpr-banner',
+    '[class*="cookie-consent"]',
+    '[class*="gdpr"]',
+    '[id*="cookie-banner"]',
+    '[id*="consent"]',
+    'dialog[open]',
+]
+
+
+async def _handle_gdpr_consent(page: Page) -> bool:
+    """Attempt to dismiss GDPR/cookie consent banners.
+
+    Returns True if a consent banner was handled, False otherwise.
+    Checks both the main page and all iframes.
+    """
+    handled = False
+    print("[Explorer] Checking for GDPR consent banners...")
+
+    # First, try clicking common accept buttons in main frame
+    for selector in CONSENT_BUTTON_SELECTORS:
+        try:
+            locator = page.locator(selector).first
+            if await locator.is_visible(timeout=300):
+                await locator.click(timeout=2000)
+                print(f"[Explorer] Clicked consent button in main frame: {selector}")
+                handled = True
+                await page.wait_for_timeout(1000)
+                break
+        except Exception:
+            continue
+
+    # Check all iframes for consent buttons
+    if not handled:
+        try:
+            frames = page.frames
+            for i, frame in enumerate(frames[1:], 1):  # Skip main frame (index 0)
+                if handled:
+                    break
+                try:
+                    frame_url = frame.url or ""
+                    # Common consent iframe patterns
+                    if any(x in frame_url.lower() for x in ['consent', 'gdpr', 'cookie', 'cmp', 'sp-']):
+                        print(f"[Explorer] Found consent iframe {i}: {frame_url[:80]}")
+                        for selector in CONSENT_BUTTON_SELECTORS:
+                            try:
+                                locator = frame.locator(selector).first
+                                if await locator.is_visible(timeout=300):
+                                    await locator.click(timeout=2000)
+                                    print(f"[Explorer] Clicked consent button in iframe {i}: {selector}")
+                                    handled = True
+                                    await page.wait_for_timeout(1000)
+                                    break
+                            except Exception:
+                                continue
+                except Exception:
+                    continue
+        except Exception as e:
+            print(f"[Explorer] Iframe consent check failed: {e}")
+
+    # Try to remove dialogs via JavaScript in main frame
+    if not handled:
+        try:
+            removed = await page.evaluate('''() => {
+                let removed = false;
+                const selectors = ''' + json.dumps(CONSENT_DIALOG_SELECTORS) + ''';
+                for (const selector of selectors) {
+                    const elements = document.querySelectorAll(selector);
+                    elements.forEach(el => {
+                        if (el && el.offsetParent !== null) {
+                            el.remove();
+                            removed = true;
+                        }
+                    });
+                }
+                // Remove any modal overlays
+                document.querySelectorAll('[class*="overlay"][class*="modal"], [class*="backdrop"]').forEach(el => {
+                    if (el.offsetParent !== null) {
+                        el.remove();
+                        removed = true;
+                    }
+                });
+                // Remove iframes that look like consent managers
+                document.querySelectorAll('iframe[src*="consent"], iframe[src*="gdpr"], iframe[src*="cookie"], iframe[src*="cmp"]').forEach(el => {
+                    el.remove();
+                    removed = true;
+                });
+                // Reset body overflow
+                document.body.style.overflow = 'auto';
+                document.documentElement.style.overflow = 'auto';
+                return removed;
+            }''')
+            if removed:
+                print("[Explorer] Removed consent dialog via JavaScript")
+                handled = True
+        except Exception as e:
+            print(f"[Explorer] JS consent removal failed: {e}")
+
+    # Final attempt: press Escape key
+    if not handled:
+        try:
+            await page.keyboard.press('Escape')
+            await page.wait_for_timeout(500)
+            print("[Explorer] Pressed Escape to dismiss dialogs")
+        except Exception:
+            pass
+
+    if not handled:
+        print("[Explorer] No consent banner found or handled")
+
+    return handled
+
+
 async def _get_page_state(page: Page) -> dict[str, Any]:
     """Extract relevant page state for LLM decision-making.
 
@@ -230,7 +388,9 @@ def _decide_next_action(
     login_params: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Use LLM to decide next action based on page state."""
+    print(f"[Explorer] _decide_next_action called, step {step_num}")
     if not has_api_key():
+        print("[Explorer] No API key found!")
         return None
 
     schema_str = json.dumps(schema, indent=2)
@@ -292,7 +452,9 @@ Already visited: {len(visited_urls)} URLs{credentials_notice}
 Decide next action (JSON only):"""
 
     try:
-        data, _ = complete_json(sys_prompt, user_prompt, max_tokens=300)
+        data, raw = complete_json(sys_prompt, user_prompt, max_tokens=300)
+        print(f"[Explorer] LLM raw response: {raw[:500]}")
+        print(f"[Explorer] LLM parsed action: {data}")
         return data if isinstance(data, dict) else None
     except Exception as e:
         print(f"[Explorer] LLM decision failed: {e}")
@@ -416,6 +578,12 @@ async def explore_with_playwright(  # noqa: PLR0912, PLR0915
 
             # Wait for dynamic content and iframes to load
             await page.wait_for_timeout(2000)
+
+            # Handle GDPR/cookie consent banners before exploration
+            consent_handled = await _handle_gdpr_consent(page)
+            if consent_handled:
+                # Wait a bit more for page to stabilize after consent
+                await page.wait_for_timeout(1000)
 
             # Capture initial state
             screenshot_path = screenshots_dir / f"exploration-step-0-{job_id}.png"
