@@ -1,0 +1,16 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: scry
+  description: Agentic web scraper with LLM-driven exploration and self-healing
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+  tags:
+    - python
+    - scraper
+    - llm
+    - playwright
+spec:
+  type: service
+  lifecycle: experimental
+  owner: team:maistack
