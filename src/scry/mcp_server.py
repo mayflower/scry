@@ -210,6 +210,11 @@ async def browser(
 
 def main() -> None:
     """Run the MCP server with streamable-http transport."""
+    # Initialize OpenTelemetry tracing (if enabled)
+    from .telemetry import init_telemetry
+
+    init_telemetry()
+
     port = int(os.getenv("MCP_PORT", "8085"))
     host = os.getenv("MCP_HOST", "0.0.0.0")  # nosec B104 - Docker container binding
 

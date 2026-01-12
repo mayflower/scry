@@ -19,6 +19,11 @@ dependencies = [
   "anthropic>=0.29",
   "fastmcp>=2.0",
   "pillow>=10.0",
+  # OpenTelemetry
+  "opentelemetry-api>=1.27.0",
+  "opentelemetry-sdk>=1.27.0",
+  "opentelemetry-exporter-otlp-proto-grpc>=1.27.0",
+  "opentelemetry-instrumentation-starlette>=0.48b0",
 ]
 
 [project.optional-dependencies]
