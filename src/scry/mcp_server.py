@@ -12,11 +12,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import uuid
 from typing import Any
 
 from fastmcp import Context, FastMCP
+
+# Configure logging to show INFO level (required for telemetry messages)
+logging.basicConfig(level=logging.INFO)
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
