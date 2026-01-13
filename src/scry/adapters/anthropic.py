@@ -11,6 +11,11 @@ import os
 from typing import Any
 
 
+# Browser Tools API configuration
+BROWSER_TOOLS_BETA_FLAG = "browser-tools-2025-09-10"
+BROWSER_TOOLS_MODEL = "claude-opus-4-5-20251101"  # Current Claude Opus 4.5
+
+
 def _get_api_key() -> str | None:
     # Prefer standard env name; fall back for backward compatibility
     return os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_API_KEY")
@@ -81,7 +86,7 @@ def create_browser_tool_config(
 
 def complete_with_browser_tools(
     messages: list[dict[str, Any]],
-    model: str = "claude-sonnet-4-20250514",
+    model: str | None = None,
     max_tokens: int = 4096,
     temperature: float = 0.0,
     viewport_width: int = 1024,
@@ -90,9 +95,12 @@ def complete_with_browser_tools(
 ) -> Any:
     """Call Claude with Browser Tools API.
 
+    Uses client.beta.messages.create() with betas parameter for Browser Tools API.
+
     Args:
         messages: Conversation messages in Anthropic format
-        model: Claude model to use (default: claude-sonnet-4-20250514)
+        model: Claude model to use (default: BROWSER_TOOLS_MODEL)
+               Supported models: claude-sonnet-4-20250514, claude-opus-4-20250514
         max_tokens: Max tokens in response
         temperature: Temperature for sampling (0.0 = deterministic)
         viewport_width: Browser viewport width
@@ -104,6 +112,10 @@ def complete_with_browser_tools(
     """
     client = _client()
 
+    # Use default model if not specified
+    if model is None:
+        model = BROWSER_TOOLS_MODEL
+
     tool_config = create_browser_tool_config(viewport_width, viewport_height)
 
     kwargs: dict[str, Any] = {
@@ -112,13 +124,13 @@ def complete_with_browser_tools(
         "temperature": temperature,
         "tools": [tool_config],
         "messages": messages,
-        "extra_headers": {"anthropic-beta": "browser-tools-2025-09-10"},
+        "betas": [BROWSER_TOOLS_BETA_FLAG],
     }
 
     if system_prompt:
         kwargs["system"] = system_prompt
 
-    return client.messages.create(**kwargs)
+    return client.beta.messages.create(**kwargs)
 
 
 def complete_json(

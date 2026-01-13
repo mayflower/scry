@@ -173,11 +173,10 @@ When you're done or stuck, explain what you accomplished."""
         for iteration in range(max_steps):
             print(f"[Explorer] Iteration {iteration + 1}/{max_steps}")
 
-            # Call Claude with browser tools
+            # Call Claude with browser tools (uses BROWSER_TOOLS_MODEL by default)
             try:
                 response = complete_with_browser_tools(
                     messages=messages,
-                    model="claude-sonnet-4-20250514",  # Can switch to haiku for cost savings
                     max_tokens=4096,
                     system_prompt=_create_system_prompt(),
                 )
