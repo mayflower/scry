@@ -4,6 +4,7 @@ metadata:
   name: scry
   description: Agentic web scraper with LLM-driven exploration and self-healing
   annotations:
+    github.com/project-slug: mayflower/scry
     backstage.io/techdocs-ref: dir:.
   tags:
     - python
