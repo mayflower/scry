@@ -19,7 +19,7 @@ from typing import Any
 # Browser Tool configuration (following browser-use-demo approach)
 # Uses standard messages API with custom tool definition, NOT beta browser tools API
 BROWSER_TOOL_MODEL = "claude-sonnet-4-20250514"
-BROWSER_TOOLS_ENABLED = os.getenv("BROWSER_TOOLS_ENABLED", "false").lower() == "true"
+BROWSER_TOOLS_ENABLED = os.getenv("BROWSER_TOOLS_ENABLED", "true").lower() == "true"
 PROMPT_CACHING_BETA_FLAG = "prompt-caching-2024-07-31"
 
 # Custom browser tool input schema (adapted from browser-use-demo)

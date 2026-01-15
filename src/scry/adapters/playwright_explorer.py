@@ -1,8 +1,8 @@
 """Native Playwright-based agentic exploration.
 
 Supports two modes:
-1. Browser Tools API (BROWSER_TOOLS_ENABLED=true) - uses Anthropic's native browser automation
-2. Async Playwright + complete_json (default) - uses regular Claude API for decisions
+1. Browser Tools API (default) - uses custom tool schema with standard Claude API
+2. Async Playwright + complete_json (BROWSER_TOOLS_ENABLED=false) - legacy mode
 
 Cookie banner handling uses LLM-based detection (no string matching).
 """
