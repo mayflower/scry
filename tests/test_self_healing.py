@@ -25,7 +25,6 @@ class TestHeuristicPatches:
 
         assert patch["wait_load_state"] is True
         assert patch["extra_wait_ms"] == 1000
-        assert "handle_cookie_banner" not in patch
 
     def test_timeout_error_patch(self):
         """Test patch for timeout errors."""
@@ -33,27 +32,17 @@ class TestHeuristicPatches:
 
         assert patch["wait_load_state"] is True
         assert patch["extra_wait_ms"] == 2000
-        assert patch["handle_cookie_banner"] is True
-
-    def test_cookie_banner_patch(self):
-        """Test cookie banner handling in later attempts."""
-        patch = _heuristic_patch(3, "Element not found")
-
-        assert patch["handle_cookie_banner"] is True
 
     def test_progressive_patches(self):
         """Test that patches become more aggressive with attempts."""
         patch1 = _heuristic_patch(1, "Error")
-        patch2 = _heuristic_patch(2, "Error")
-        patch3 = _heuristic_patch(3, "Error")
+        patch2 = _heuristic_patch(2, "Timeout error")
 
         # First attempt: basic wait
         assert patch1.get("extra_wait_ms", 0) > 0
-        assert "handle_cookie_banner" not in patch1
 
-        # Second+ attempts: cookie handling
-        assert patch2["handle_cookie_banner"] is True
-        assert patch3["handle_cookie_banner"] is True
+        # Timeout errors get longer waits
+        assert patch2.get("extra_wait_ms", 0) >= patch1.get("extra_wait_ms", 0)
 
 
 class TestProposePatch:
@@ -79,7 +68,6 @@ class TestProposePatch:
             {
                 "wait_load_state": True,
                 "extra_wait_ms": 3000,
-                "handle_cookie_banner": True,
             },
             None,
         )
@@ -88,7 +76,6 @@ class TestProposePatch:
 
         assert patch["wait_load_state"] is True
         assert patch["extra_wait_ms"] == 3000
-        assert patch["handle_cookie_banner"] is True
 
         # Verify Claude was called with appropriate prompts
         mock_complete.assert_called_once()
@@ -131,6 +118,20 @@ class TestProposePatch:
         # Should fallback to heuristic
         assert patch["wait_load_state"] is True
         assert patch["extra_wait_ms"] == 1000
+
+    @patch("scry.core.self_heal.diagnose.has_api_key")
+    def test_cookie_selector_passthrough(self, mock_has_key):
+        """Test that pre-detected cookie selector is passed through."""
+        mock_has_key.return_value = False
+
+        patch = propose_patch(
+            attempt=2,
+            stderr="Error",
+            html=None,
+            cookie_dismiss_selector="button.consent-accept",
+        )
+
+        assert patch.get("cookie_dismiss_selector") == "button.consent-accept"
 
 
 class TestPatchMerging:
@@ -196,9 +197,9 @@ class TestSelfHealingIntegration:
             patch = propose_patch(attempt, error, None)
             patches.append(patch)
 
-        # Verify progression
-        assert patches[0].get("extra_wait_ms", 0) <= patches[1].get("extra_wait_ms", 0)
-        assert patches[2].get("handle_cookie_banner") is True
+        # All patches should have wait options
+        for p in patches:
+            assert "wait_load_state" in p or "extra_wait_ms" in p
 
     def test_patch_accumulation(self):
         """Test accumulating patches over multiple attempts."""
@@ -212,29 +213,24 @@ class TestSelfHealingIntegration:
         # After multiple attempts, should have accumulated options
         assert "wait_load_state" in base_options
         assert "extra_wait_ms" in base_options
-        assert "handle_cookie_banner" in base_options
 
     @pytest.mark.parametrize(
-        "error_message,expected_patch",
+        "error_message,expected_keys",
         [
             (
                 "Timeout waiting for selector .button",
-                {"wait_load_state": True, "extra_wait_ms": 2000},
+                ["wait_load_state", "extra_wait_ms"],
             ),
-            ("Element not found: #submit", {"handle_cookie_banner": True}),
-            (
-                "Navigation timeout",
-                {"wait_load_state": True},
-            ),  # Don't check exact ms value
+            ("Element not found: #submit", ["wait_load_state"]),
+            ("Navigation timeout", ["wait_load_state"]),
         ],
     )
-    def test_error_specific_patches(self, error_message, expected_patch):
+    def test_error_specific_patches(self, error_message, expected_keys):
         """Test that specific errors generate appropriate patches."""
-        # Test with attempt 2+ to ensure cookie banner option is available
         patch = propose_patch(2, error_message, None)
 
-        for key, value in expected_patch.items():
-            assert patch.get(key) == value
+        for key in expected_keys:
+            assert key in patch
 
 
 class TestValidationBasedHealing:

@@ -10,10 +10,11 @@ from scry.core.executor.runner import run_job
 
 
 @pytest.mark.integration
+@pytest.mark.asyncio
 @pytest.mark.skipif(
     not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY"
 )
-def test_native_exploration_multi_step_navigation():
+async def test_native_exploration_multi_step_navigation():
     """Test native exploration with a complex navigation scenario requiring at least 5 steps.
 
     This test creates a multi-page HTML structure that requires:
@@ -103,11 +104,11 @@ def test_native_exploration_multi_step_navigation():
         target_urls=[test_url],
     )
 
-    res = run_job(req)
+    res = await run_job(req)
 
     # Verify the job completed
     assert res.job_id
-    assert "exploring" in res.execution_log
+    assert any("exploring" in log.lower() for log in res.execution_log)
 
     # Check that data was extracted
     assert isinstance(res.data, dict)
@@ -119,10 +120,11 @@ def test_native_exploration_multi_step_navigation():
 
 
 @pytest.mark.integration
+@pytest.mark.asyncio
 @pytest.mark.skipif(
     not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY"
 )
-def test_native_exploration_form_interaction():
+async def test_native_exploration_form_interaction():
     """Test native exploration with form filling and submission requiring multiple steps.
 
     This test requires:
@@ -143,7 +145,7 @@ def test_native_exploration_form_interaction():
             <h1>Welcome to the Survey</h1>
             <button id="start-btn" onclick="document.getElementById('welcome').style.display='none'; document.getElementById('form-step1').style.display='block';">Start Survey</button>
         </div>
-        
+
         <div id="form-step1" style="display:none">
             <h2>Step 1: Personal Information</h2>
             <form>
@@ -152,11 +154,11 @@ def test_native_exploration_form_interaction():
                 <button type="button" onclick="document.getElementById('form-step1').style.display='none'; document.getElementById('form-step2').style.display='block';">Next</button>
             </form>
         </div>
-        
+
         <div id="form-step2" style="display:none">
             <h2>Step 2: Preferences</h2>
             <form>
-                <label>Favorite Color: 
+                <label>Favorite Color:
                     <select id="color" name="color">
                         <option value="">Select...</option>
                         <option value="red">Red</option>
@@ -168,7 +170,7 @@ def test_native_exploration_form_interaction():
                 <button type="button" onclick="showResults()">Submit</button>
             </form>
         </div>
-        
+
         <div id="results" style="display:none">
             <h2>Survey Complete!</h2>
             <div class="summary">
@@ -177,7 +179,7 @@ def test_native_exploration_form_interaction():
                 <p class="timestamp">Submitted at: 2024-01-15 10:30:00</p>
             </div>
         </div>
-        
+
         <script>
         function showResults() {
             document.getElementById('form-step2').style.display='none';
@@ -209,11 +211,11 @@ def test_native_exploration_form_interaction():
         target_urls=[test_url],
     )
 
-    res = run_job(req)
+    res = await run_job(req)
 
     # Verify the job completed
     assert res.job_id
-    assert "exploring" in res.execution_log
+    assert any("exploring" in log.lower() for log in res.execution_log)
 
     print(f"Execution log: {res.execution_log}")
     print(f"Data extracted: {res.data}")

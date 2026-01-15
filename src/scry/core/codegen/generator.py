@@ -63,7 +63,10 @@ with sync_playwright() as p:
 """
 
 
-def _render_steps(plan: ScrapePlan, handle_cookie_banner: bool) -> str:
+def _render_steps(
+    plan: ScrapePlan,
+    cookie_dismiss_selector: str | None = None,
+) -> str:
     lines: list[str] = []
     index = 0
     page_num = 0
@@ -84,9 +87,12 @@ def _render_steps(plan: ScrapePlan, handle_cookie_banner: bool) -> str:
             comment_url = step.url[:50].replace("\n", " ").replace("\r", " ")
             lines.append(f"        # Step {index}: Navigate to {comment_url}...")
             lines.append(f'        page.goto("{safe_url}")')
-            if handle_cookie_banner and page_num == 1:  # Only on first navigation
+            # Handle cookie banner on first navigation (only if LLM detected a selector)
+            if page_num == 1 and cookie_dismiss_selector:
+                # Use LLM-detected selector - no fallback to string matching
+                escaped_selector = cookie_dismiss_selector.replace('"', '\\"')
                 lines.append(
-                    "        try:\n            page.get_by_role('button', name='Accept').click(timeout=1000)\n        except Exception:\n            pass"
+                    f'        try:\n            page.locator("{escaped_selector}").click(timeout=2000)\n        except Exception:\n            pass'
                 )
             lines.append(
                 f'        page.screenshot(path=str(screens_dir / "step-{index}.png"), full_page=True)'
@@ -343,7 +349,8 @@ def generate_script(
 
     options = options or {}
     steps_code = _render_steps(
-        plan, handle_cookie_banner=bool(options.get("handle_cookie_banner", False))
+        plan,
+        cookie_dismiss_selector=options.get("cookie_dismiss_selector"),
     )
     # Properly serialize the extraction_spec and escape backslashes for embedding in Python string
     extraction_spec = json.dumps(options.get("extraction_spec", {})).replace(

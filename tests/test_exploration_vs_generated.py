@@ -31,7 +31,8 @@ def normalize_data(data: dict[str, Any]) -> dict[str, Any]:
 
 @pytest.mark.integration
 @pytest.mark.slow  # This test does real browser automation
-def test_v2_exploration_vs_v4_generated():
+@pytest.mark.asyncio
+async def test_v2_exploration_vs_v4_generated():
     """Test that V2 exploration and V4's generated code produce similar results.
 
     V4 does exploration first then generates code, so this tests that:
@@ -79,12 +80,12 @@ def test_v2_exploration_vs_v4_generated():
     )
 
     # Run V2 exploration
-    v2_response = run_job(req)
+    v2_response = await run_job(req)
     assert v2_response.status == "completed"
     v2_data = normalize_data(v2_response.data)
 
     # Run V4 which does exploration + code generation
-    v4_response = run_job(req)
+    v4_response = await run_job(req)
     assert v4_response.status == "completed"
     v4_data = normalize_data(v4_response.data)
 
@@ -105,7 +106,8 @@ def test_v2_exploration_vs_v4_generated():
 
 
 @pytest.mark.integration
-def test_v2_exploration_vs_v3_generated_navigation():
+@pytest.mark.asyncio
+async def test_v2_exploration_vs_v3_generated_navigation():
     """Test V2 and V3 with multi-step navigation."""
 
     # Two-page scenario with navigation
@@ -134,17 +136,17 @@ def test_v2_exploration_vs_v3_generated_navigation():
     )
 
     # Run V2 exploration
-    v2_response = run_job(req)
+    v2_response = await run_job(req)
     v2_data = normalize_data(v2_response.data)
 
     # Run V3 code generation
-    v3_response = run_job(req)
+    v3_response = await run_job(req)
     v3_data = normalize_data(v3_response.data)
 
     # Both should navigate and extract the same data
-    assert v2_data == v3_data, (
-        f"V2 and V3 produced different results:\nV2: {v2_data}\nV3: {v3_data}"
-    )
+    assert (
+        v2_data == v3_data
+    ), f"V2 and V3 produced different results:\nV2: {v2_data}\nV3: {v3_data}"
 
     # Verify extraction worked
     if v2_data:  # May be empty if navigation didn't work with data URLs
@@ -155,7 +157,8 @@ def test_v2_exploration_vs_v3_generated_navigation():
 
 @pytest.mark.integration
 @pytest.mark.slow
-def test_v4_exploration_vs_generated_with_self_healing():
+@pytest.mark.asyncio
+async def test_v4_exploration_vs_generated_with_self_healing():
     """Test that V4 (with self-healing) produces consistent results when converted to code."""
 
     # HTML with potential extraction challenges
@@ -166,7 +169,7 @@ def test_v4_exploration_vs_generated_with_self_healing():
         <script>
             // Simulate dynamic content load
             setTimeout(function() {
-                document.getElementById('content').innerHTML = 
+                document.getElementById('content').innerHTML =
                     '<h1>Dynamic Content</h1><p class="info">Loaded successfully</p>';
                 document.getElementById('content').style.display = 'block';
             }, 100);
@@ -190,7 +193,7 @@ def test_v4_exploration_vs_generated_with_self_healing():
     )
 
     # Run V4 with self-healing
-    v4_response = run_job(req)
+    v4_response = await run_job(req)
     v4_data = normalize_data(v4_response.data)
 
     # Check if V4 generated code
@@ -208,7 +211,8 @@ def test_v4_exploration_vs_generated_with_self_healing():
 
 
 @pytest.mark.integration
-def test_exploration_consistency():
+@pytest.mark.asyncio
+async def test_exploration_consistency():
     """Test that V2 exploration is consistent for static content."""
 
     # Test with a deterministic page structure
@@ -245,8 +249,8 @@ def test_exploration_consistency():
     )
 
     # Run V2 twice - should get similar results (may have minor differences in exploration)
-    v2_run1 = run_job(req)
-    v2_run2 = run_job(req)
+    v2_run1 = await run_job(req)
+    v2_run2 = await run_job(req)
 
     v2_data1 = normalize_data(v2_run1.data)
     v2_data2 = normalize_data(v2_run2.data)
@@ -254,12 +258,12 @@ def test_exploration_consistency():
     # Check key fields are consistent
     if v2_data1 and v2_data2:
         # Both should extract the main content
-        assert v2_data1.get("title") and v2_data2.get("title"), (
-            "Both runs should extract title"
-        )
-        assert v2_data1.get("author") and v2_data2.get("author"), (
-            "Both runs should extract author"
-        )
+        assert v2_data1.get("title") and v2_data2.get(
+            "title"
+        ), "Both runs should extract title"
+        assert v2_data1.get("author") and v2_data2.get(
+            "author"
+        ), "Both runs should extract author"
 
     # Verify we actually extracted something meaningful
     if v2_data1.get("title"):
@@ -271,7 +275,8 @@ def test_exploration_consistency():
 
 
 @pytest.mark.integration
-def test_generated_code_reproducibility():
+@pytest.mark.asyncio
+async def test_generated_code_reproducibility():
     """Test that generated code can be run multiple times with same results."""
 
     html = """
@@ -302,10 +307,10 @@ def test_generated_code_reproducibility():
     )
 
     # Generate code with V3
-    v3_response = run_job(req)
+    v3_response = await run_job(req)
 
     # Run the same request again - should use the same generated code logic
-    v3_response2 = run_job(req)
+    v3_response2 = await run_job(req)
 
     # Results should be identical
     v3_data1 = normalize_data(v3_response.data)
@@ -322,5 +327,7 @@ def test_generated_code_reproducibility():
 
 if __name__ == "__main__":
     # Run a simple comparison test
-    test_v2_exploration_vs_v4_generated()
+    import asyncio
+
+    asyncio.run(test_v2_exploration_vs_v4_generated())
     print("✅ V2 exploration and V4 generated code produce consistent results")

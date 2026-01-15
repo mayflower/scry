@@ -7,10 +7,11 @@ from scry.api.dto import ScrapeRequest
 from scry.core.executor.runner import run_job_with_id
 
 
+@pytest.mark.asyncio
 @pytest.mark.skipif(
     not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY"
 )
-def test_native_explorer_minimal_integration():
+async def test_native_explorer_minimal_integration():
     """Minimal test: Does the pipeline actually work with native explorer?
 
     This is a REAL test - no mocks, actual browser, actual LLM.
@@ -38,20 +39,20 @@ def test_native_explorer_minimal_integration():
 
     req = ScrapeRequest(
         nl_request="Extract the h1 heading text",
-        output_schema={"type": "object", "properties": {"heading": {"type": "string"}}},
+        schema={"type": "object", "properties": {"heading": {"type": "string"}}},
         target_urls=[data_url],
     )
 
     # This is the real test - does it complete without crashing?
-    result = run_job_with_id("native-explorer-test", req)
+    result = await run_job_with_id("native-explorer-test", req)
 
     # Verify pipeline ran
     assert result.job_id == "native-explorer-test"
-    assert "exploring" in result.execution_log
-    assert "exploration_complete" in result.execution_log
+    assert any("exploring" in log.lower() for log in result.execution_log)
+    assert any("exploration_complete" in log.lower() for log in result.execution_log)
 
     # Should have completed something (may or may not have correct data with data URLs)
-    assert "done" in result.execution_log
+    assert any("done" in log.lower() for log in result.execution_log)
 
     print("\n✅ NATIVE EXPLORER INTEGRATION VERIFIED")
     print(f"   Execution log: {result.execution_log}")
@@ -62,5 +63,7 @@ def test_native_explorer_minimal_integration():
 
 if __name__ == "__main__":
     # Run directly for quick testing
-    if test_native_explorer_minimal_integration():
+    import asyncio
+
+    if asyncio.run(test_native_explorer_minimal_integration()):
         print("\n✅ INTEGRATION TEST PASSED - Native explorer works!")

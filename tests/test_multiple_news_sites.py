@@ -12,10 +12,11 @@ from scry.core.executor.runner import run_job_with_id  # type: ignore[import-unt
 
 
 @pytest.mark.integration
+@pytest.mark.asyncio
 @pytest.mark.skipif(
     not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY"
 )
-def test_golem_news_extraction():
+async def test_golem_news_extraction():
     """Extract the last 3 news items from golem.de.
 
     Tests iframe-aware cookie banner handling. golem.de uses a CMP
@@ -25,7 +26,7 @@ def test_golem_news_extraction():
 
     req = ScrapeRequest(
         nl_request="Extract the titles and links of the last 3 news articles from the homepage",
-        output_schema={
+        schema={
             "type": "object",
             "properties": {
                 "news": {
@@ -47,15 +48,21 @@ def test_golem_news_extraction():
     print("INTEGRATION TEST: Extracting news from golem.de (with cookie banner)")
     print("=" * 70)
 
-    result = run_job_with_id("golem-news-test", req)
+    result = await run_job_with_id("golem-news-test", req)
 
     print(f"\nExecution log: {result.execution_log}")
     print(f"\nExtracted data: {result.data}")
 
     # Verify pipeline completed
-    assert "exploring" in result.execution_log, "Should have exploration phase"
-    assert "exploration_complete" in result.execution_log, "Exploration should complete"
-    assert "done" in result.execution_log, "Pipeline should finish"
+    assert any(
+        "exploring" in log.lower() for log in result.execution_log
+    ), "Should have exploration phase"
+    assert any(
+        "exploration_complete" in log.lower() for log in result.execution_log
+    ), "Exploration should complete"
+    assert any(
+        "done" in log.lower() for log in result.execution_log
+    ), "Pipeline should finish"
 
     # Verify data structure
     assert result.data is not None, "Should extract some data"
@@ -80,24 +87,25 @@ def test_golem_news_extraction():
         # Verify at least one item has title (links may be empty on some sites)
         if len(news_items) > 0:
             first_item = news_items[0]
-            assert first_item.get("title"), (
-                "First news item should have a non-empty title"
-            )
+            assert first_item.get(
+                "title"
+            ), "First news item should have a non-empty title"
 
     print("\n✅ golem.de test passed (cookie banner handled!)")
 
 
 @pytest.mark.integration
+@pytest.mark.asyncio
 @pytest.mark.skipif(
     not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY"
 )
-def test_chip_news_extraction():
+async def test_chip_news_extraction():
     """Extract the last 3 news items from chip.de."""
     os.environ["MAX_EXPLORATION_STEPS"] = "10"
 
     req = ScrapeRequest(
         nl_request="Extract the titles and links of the last 3 news articles from the homepage",
-        output_schema={
+        schema={
             "type": "object",
             "properties": {
                 "news": {
@@ -119,15 +127,21 @@ def test_chip_news_extraction():
     print("INTEGRATION TEST: Extracting news from chip.de")
     print("=" * 70)
 
-    result = run_job_with_id("chip-news-test", req)
+    result = await run_job_with_id("chip-news-test", req)
 
     print(f"\nExecution log: {result.execution_log}")
     print(f"\nExtracted data: {result.data}")
 
     # Verify pipeline completed
-    assert "exploring" in result.execution_log, "Should have exploration phase"
-    assert "exploration_complete" in result.execution_log, "Exploration should complete"
-    assert "done" in result.execution_log, "Pipeline should finish"
+    assert any(
+        "exploring" in log.lower() for log in result.execution_log
+    ), "Should have exploration phase"
+    assert any(
+        "exploration_complete" in log.lower() for log in result.execution_log
+    ), "Exploration should complete"
+    assert any(
+        "done" in log.lower() for log in result.execution_log
+    ), "Pipeline should finish"
 
     # Verify data structure
     assert result.data is not None, "Should extract some data"
@@ -150,24 +164,25 @@ def test_chip_news_extraction():
         # Verify at least one item has title (links may be empty on some sites)
         if len(news_items) > 0:
             first_item = news_items[0]
-            assert first_item.get("title"), (
-                "First news item should have a non-empty title"
-            )
+            assert first_item.get(
+                "title"
+            ), "First news item should have a non-empty title"
 
     print("\n✅ chip.de test passed")
 
 
 @pytest.mark.integration
+@pytest.mark.asyncio
 @pytest.mark.skipif(
     not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY"
 )
-def test_computerbild_news_extraction():
+async def test_computerbild_news_extraction():
     """Extract the last 3 news items from computerbild.de."""
     os.environ["MAX_EXPLORATION_STEPS"] = "10"
 
     req = ScrapeRequest(
         nl_request="Extract the titles and links of the last 3 news articles from the homepage",
-        output_schema={
+        schema={
             "type": "object",
             "properties": {
                 "news": {
@@ -189,15 +204,21 @@ def test_computerbild_news_extraction():
     print("INTEGRATION TEST: Extracting news from computerbild.de")
     print("=" * 70)
 
-    result = run_job_with_id("computerbild-news-test", req)
+    result = await run_job_with_id("computerbild-news-test", req)
 
     print(f"\nExecution log: {result.execution_log}")
     print(f"\nExtracted data: {result.data}")
 
     # Verify pipeline completed
-    assert "exploring" in result.execution_log, "Should have exploration phase"
-    assert "exploration_complete" in result.execution_log, "Exploration should complete"
-    assert "done" in result.execution_log, "Pipeline should finish"
+    assert any(
+        "exploring" in log.lower() for log in result.execution_log
+    ), "Should have exploration phase"
+    assert any(
+        "exploration_complete" in log.lower() for log in result.execution_log
+    ), "Exploration should complete"
+    assert any(
+        "done" in log.lower() for log in result.execution_log
+    ), "Pipeline should finish"
 
     # Verify data structure
     assert result.data is not None, "Should extract some data"
@@ -222,22 +243,24 @@ def test_computerbild_news_extraction():
         # Verify at least one item has title (links may be empty on some sites)
         if len(news_items) > 0:
             first_item = news_items[0]
-            assert first_item.get("title"), (
-                "First news item should have a non-empty title"
-            )
+            assert first_item.get(
+                "title"
+            ), "First news item should have a non-empty title"
 
     print("\n✅ computerbild.de test passed")
 
 
 if __name__ == "__main__":
     # Run all tests
+    import asyncio
+
     print("\n" + "=" * 70)
     print("MULTI-SITE VALIDATION: Testing domain-agnostic implementation")
     print("=" * 70)
 
-    test_golem_news_extraction()
-    test_chip_news_extraction()
-    test_computerbild_news_extraction()
+    asyncio.run(test_golem_news_extraction())
+    asyncio.run(test_chip_news_extraction())
+    asyncio.run(test_computerbild_news_extraction())
 
     print("\n" + "=" * 70)
     print("✅ ALL MULTI-SITE TESTS PASSED")

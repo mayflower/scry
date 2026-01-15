@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from scry.api.dto import ScrapeRequest
@@ -147,9 +147,9 @@ class TestValidationInBrowserUse:
 
         # Check that validations were added
         validate_steps = [s for s in steps if isinstance(s, Validate)]
-        assert len(validate_steps) == 2, (
-            f"Expected 2 validations, got {len(validate_steps)}"
-        )
+        assert (
+            len(validate_steps) == 2
+        ), f"Expected 2 validations, got {len(validate_steps)}"
 
         # Check navigation validation
         nav_validations = [
@@ -413,8 +413,9 @@ class TestValidationCodeGeneration:
 class TestValidationInRunner:
     """Test validation failure handling in the runner."""
 
+    @pytest.mark.asyncio
     @patch("subprocess.run")
-    def test_runner_handles_validation_failure(self, mock_run):
+    async def test_runner_handles_validation_failure(self, mock_run):
         """Test that runner detects and handles validation failures."""
         # Simulate validation failure (exit code 1)
         mock_result = MagicMock()
@@ -430,7 +431,8 @@ class TestValidationInRunner:
         )
 
         with patch(
-            "scry.adapters.playwright_explorer.explore_with_playwright"
+            "scry.adapters.playwright_explorer.explore_with_playwright",
+            new_callable=AsyncMock,
         ) as mock_explore:
             # Mock exploration result
             mock_explore.return_value = ExplorationResult(
@@ -444,16 +446,17 @@ class TestValidationInRunner:
             with patch("scry.core.executor.runner.propose_patch") as mock_patch:
                 mock_patch.return_value = {"extra_wait_ms": 1000}
 
-                result = run_job_with_id("test-job", req)
+                result = await run_job_with_id("test-job", req)
 
                 # Should detect validation failure
-                assert "validation_failed" in result.execution_log
+                assert any("validation_failed" in log for log in result.execution_log)
 
                 # Should attempt repair
                 assert mock_patch.called
 
+    @pytest.mark.asyncio
     @patch("subprocess.run")
-    def test_runner_retries_on_validation_failure(self, mock_run):
+    async def test_runner_retries_on_validation_failure(self, mock_run):
         """Test that runner retries after validation failure."""
         # First call fails, second succeeds
         mock_result_fail = MagicMock()
@@ -473,7 +476,8 @@ class TestValidationInRunner:
         )
 
         with patch(
-            "scry.adapters.playwright_explorer.explore_with_playwright"
+            "scry.adapters.playwright_explorer.explore_with_playwright",
+            new_callable=AsyncMock,
         ) as mock_explore:
             mock_explore.return_value = ExplorationResult(
                 steps=[Navigate(url="https://example.com")],
@@ -483,7 +487,7 @@ class TestValidationInRunner:
                 data={},
             )
 
-            result = run_job_with_id("test-job", req)
+            result = await run_job_with_id("test-job", req)
 
             # Should have tried twice
             assert mock_run.call_count == 2
@@ -500,7 +504,8 @@ class TestEndToEndValidation:
 
     @pytest.mark.integration
     @pytest.mark.slow
-    def test_full_validation_flow(self):
+    @pytest.mark.asyncio
+    async def test_full_validation_flow(self):
         """Test complete validation flow from exploration to self-healing."""
         html = """
         <html>
@@ -531,7 +536,7 @@ class TestEndToEndValidation:
             target_urls=[url],
         )
 
-        result = run_job_with_id("validation-test", req)
+        result = await run_job_with_id("validation-test", req)
 
         # Should complete successfully
         assert result.status == "completed"
@@ -551,7 +556,8 @@ class TestEndToEndValidation:
             assert "script_done" in result.execution_log
 
     @pytest.mark.integration
-    def test_validation_with_dynamic_content(self):
+    @pytest.mark.asyncio
+    async def test_validation_with_dynamic_content(self):
         """Test validation with dynamically loaded content."""
         html = """
         <html>
@@ -576,7 +582,7 @@ class TestEndToEndValidation:
             target_urls=[url],
         )
 
-        result = run_job_with_id("dynamic-test", req)
+        result = await run_job_with_id("dynamic-test", req)
 
         # Should handle dynamic content
         assert result.status == "completed"
