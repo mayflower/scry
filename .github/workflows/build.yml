@@ -30,7 +30,8 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          uv run pytest tests/ --cov=src/scry --cov-report=xml:coverage.xml --cov-report=term -v -m "not integration" || true
+          uv run pytest tests/ --cov=src/scry --cov-report=xml:${{ github.workspace }}/coverage.xml --cov-report=term -v -m "not integration" || true
+          ls -la ${{ github.workspace }}/coverage.xml || echo "Coverage file not generated"
         continue-on-error: true
 
       # SonarQube scan
