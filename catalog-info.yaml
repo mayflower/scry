@@ -5,7 +5,7 @@ metadata:
   description: Agentic web scraper with LLM-driven exploration and self-healing
   annotations:
     github.com/project-slug: mayflower/scry
-    backstage.io/techdocs-ref: dir:.
+    backstage.io/techdocs-ref: url:https://github.com/mayflower/scry/tree/main
     # Monitoring not applicable
     prometheus.io/alert: "false"
     grafana/dashboard-selector: ""
