@@ -18,6 +18,11 @@ if TYPE_CHECKING:
 
     from playwright.sync_api import Browser, BrowserContext, ElementHandle, Page, Playwright
 
+# Error message constants to avoid duplication
+_ERR_REF_OR_COORD_REQUIRED = "Either ref or coordinate is required"
+_ERR_COORD_FORMAT = "coordinate must be [x, y]"
+_ERR_START_COORD_FORMAT = "start_coordinate must be [x, y]"
+
 
 class BrowserExecutor:
     """Executes browser actions and manages browser state.
@@ -396,7 +401,7 @@ class BrowserExecutor:
             return self._success_result(
                 tool_use_id, [{"type": "text", "text": f"Clicked at ({x}, {y})"}]
             )
-        return self._error_result(tool_use_id, "Either ref or coordinate is required for click")
+        return self._error_result(tool_use_id, _ERR_REF_OR_COORD_REQUIRED)
 
     def _handle_right_click(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Handle right click."""
@@ -417,7 +422,7 @@ class BrowserExecutor:
             return self._success_result(
                 tool_use_id, [{"type": "text", "text": f"Right-clicked at ({x}, {y})"}]
             )
-        return self._error_result(tool_use_id, "Either ref or coordinate is required")
+        return self._error_result(tool_use_id, _ERR_REF_OR_COORD_REQUIRED)
 
     def _handle_middle_click(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Handle middle click."""
@@ -438,7 +443,7 @@ class BrowserExecutor:
             return self._success_result(
                 tool_use_id, [{"type": "text", "text": f"Middle-clicked at ({x}, {y})"}]
             )
-        return self._error_result(tool_use_id, "Either ref or coordinate is required")
+        return self._error_result(tool_use_id, _ERR_REF_OR_COORD_REQUIRED)
 
     def _handle_double_click(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Handle double click."""
@@ -459,7 +464,7 @@ class BrowserExecutor:
             return self._success_result(
                 tool_use_id, [{"type": "text", "text": f"Double-clicked at ({x}, {y})"}]
             )
-        return self._error_result(tool_use_id, "Either ref or coordinate is required")
+        return self._error_result(tool_use_id, _ERR_REF_OR_COORD_REQUIRED)
 
     def _handle_triple_click(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Handle triple click."""
@@ -480,7 +485,7 @@ class BrowserExecutor:
             return self._success_result(
                 tool_use_id, [{"type": "text", "text": f"Triple-clicked at ({x}, {y})"}]
             )
-        return self._error_result(tool_use_id, "Either ref or coordinate is required")
+        return self._error_result(tool_use_id, _ERR_REF_OR_COORD_REQUIRED)
 
     def _handle_drag(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Handle drag from start to end coordinate."""
@@ -488,9 +493,9 @@ class BrowserExecutor:
         end_coord = input_data.get("coordinate")
 
         if not start_coord or len(start_coord) != 2:
-            return self._error_result(tool_use_id, "start_coordinate must be [x, y]")
+            return self._error_result(tool_use_id, _ERR_START_COORD_FORMAT)
         if not end_coord or len(end_coord) != 2:
-            return self._error_result(tool_use_id, "coordinate must be [x, y]")
+            return self._error_result(tool_use_id, _ERR_COORD_FORMAT)
 
         start_x, start_y = start_coord
         end_x, end_y = end_coord
@@ -515,7 +520,7 @@ class BrowserExecutor:
         coordinate = input_data.get("coordinate")
 
         if not coordinate or len(coordinate) != 2:
-            return self._error_result(tool_use_id, "coordinate must be [x, y]")
+            return self._error_result(tool_use_id, _ERR_COORD_FORMAT)
 
         x, y = coordinate
         self.page.mouse.move(x, y)
@@ -530,7 +535,7 @@ class BrowserExecutor:
         coordinate = input_data.get("coordinate")
 
         if not coordinate or len(coordinate) != 2:
-            return self._error_result(tool_use_id, "coordinate must be [x, y]")
+            return self._error_result(tool_use_id, _ERR_COORD_FORMAT)
 
         x, y = coordinate
         self.page.mouse.move(x, y)

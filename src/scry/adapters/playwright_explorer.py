@@ -758,7 +758,11 @@ async def _explore_with_browser_tools(
     - Custom tool schema passed to client.messages.create()
     - Manual tool execution with async Playwright
     - No special beta API required
+
+    Args:
+        login_params: Reserved for future authentication support (not yet implemented)
     """
+    _ = login_params  # Reserved for future use
 
     print(f"[Explorer] Starting browser tools exploration for job {job_id}")
 
@@ -954,7 +958,12 @@ async def explore_with_playwright(
     to async Playwright with complete_json API for decisions.
 
     Cookie banners are handled via LLM-based detection (no string matching).
+
+    Args:
+        progress_callback: Reserved for future progress reporting (not yet implemented)
     """
+    _ = progress_callback  # Reserved for future use
+
     print(f"[Explorer] Starting exploration for job {job_id}")
     print(f"[Explorer] Target: {start_url}")
     print(f"[Explorer] Task: {nl_request}")

@@ -28,6 +28,26 @@ from ..ir.model import (
 if TYPE_CHECKING:
     from pathlib import Path
 
+# Code generation constants to avoid duplication
+_INDENT = "        "
+_TRY_BLOCK = f"{_INDENT}try:"
+_NESTED_INDENT = f"{_INDENT}    "
+_EXCEPT_BLOCK = f"{_INDENT}except Exception as e:"
+
+
+def _wrap_in_try_except(
+    action_lines: list[str], error_msg: str, indent: str = _INDENT
+) -> list[str]:
+    """Wrap action lines in try/except with a print statement for the error."""
+    nested = indent + "    "
+    lines = [f"{indent}try:"]
+    for line in action_lines:
+        lines.append(f"{nested}{line}")
+    lines.append(f"{indent}except Exception as e:")
+    lines.append(f'{nested}print(f"{error_msg}: {{e}}")')
+    return lines
+
+
 TEMPLATE = """#!/usr/bin/env python3
 import json
 from pathlib import Path
@@ -107,28 +127,31 @@ def _render_steps(
 
         elif isinstance(step, Click):
             lines.append(f"        # Step {index}: Click {step.selector}")
-            lines.append("        try:")
-            lines.append(f'            page.locator("{step.selector}").click(timeout=5000)')
-            lines.append('            page.wait_for_load_state("domcontentloaded", timeout=5000)')
-            lines.append(
-                f'            page.screenshot(path=str(screens_dir / "step-{index}-click.png"), full_page=True)'
+            lines.extend(
+                _wrap_in_try_except(
+                    [
+                        f'page.locator("{step.selector}").click(timeout=5000)',
+                        'page.wait_for_load_state("domcontentloaded", timeout=5000)',
+                        f'page.screenshot(path=str(screens_dir / "step-{index}-click.png"), full_page=True)',
+                    ],
+                    f"Failed to click {step.selector}",
+                )
             )
-            lines.append("        except Exception as e:")
-            lines.append(f'            print(f"Failed to click {step.selector}: {{e}}")')
 
         elif isinstance(step, Fill):
             lines.append(f"        # Step {index}: Fill {step.selector} with text")
-            lines.append("        try:")
-            lines.append(f'            page.locator("{step.selector}").fill("{step.text}")')
-            lines.append(
-                f'            page.screenshot(path=str(screens_dir / "step-{index}-fill.png"), full_page=True)'
+            lines.extend(
+                _wrap_in_try_except(
+                    [
+                        f'page.locator("{step.selector}").fill("{step.text}")',
+                        f'page.screenshot(path=str(screens_dir / "step-{index}-fill.png"), full_page=True)',
+                    ],
+                    f"Failed to fill {step.selector}",
+                )
             )
-            lines.append("        except Exception as e:")
-            lines.append('            print(f"Failed to fill {step.selector}: {e}")')
 
         elif isinstance(step, WaitFor):
             lines.append(f"        # Step {index}: Wait for {step.selector}")
-            lines.append("        try:")
             state_map = {
                 "visible": "visible",
                 "hidden": "hidden",
@@ -136,11 +159,14 @@ def _render_steps(
                 "detached": "detached",
             }
             state = state_map.get(step.state, "visible")
-            lines.append(
-                f'            page.locator("{step.selector}").first.wait_for(state="{state}", timeout=10000)'
+            lines.extend(
+                _wrap_in_try_except(
+                    [
+                        f'page.locator("{step.selector}").first.wait_for(state="{state}", timeout=10000)',
+                    ],
+                    "Timeout waiting for selector",
+                )
             )
-            lines.append("        except Exception as e:")
-            lines.append('            print(f"Timeout waiting for selector: {e}")')
 
         elif isinstance(step, Validate):
             lines.append(f"        # Step {index}: Validate {step.description or step.selector}")
@@ -180,50 +206,58 @@ def _render_steps(
 
         elif isinstance(step, Select):
             lines.append(f"        # Step {index}: Select option in {step.selector}")
-            lines.append("        try:")
-            lines.append(
-                f'            page.locator("{step.selector}").select_option("{step.value}")'
+            lines.extend(
+                _wrap_in_try_except(
+                    [
+                        f'page.locator("{step.selector}").select_option("{step.value}")',
+                        f'page.screenshot(path=str(screens_dir / "step-{index}-select.png"), full_page=True)',
+                    ],
+                    "Failed to select option",
+                )
             )
-            lines.append(
-                f'            page.screenshot(path=str(screens_dir / "step-{index}-select.png"), full_page=True)'
-            )
-            lines.append("        except Exception as e:")
-            lines.append('            print(f"Failed to select option: {e}")')
 
         elif isinstance(step, Hover):
             lines.append(f"        # Step {index}: Hover over {step.selector}")
-            lines.append("        try:")
-            lines.append(f'            page.locator("{step.selector}").hover()')
-            lines.append("            page.wait_for_timeout(500)")
-            lines.append(
-                f'            page.screenshot(path=str(screens_dir / "step-{index}-hover.png"), full_page=True)'
+            lines.extend(
+                _wrap_in_try_except(
+                    [
+                        f'page.locator("{step.selector}").hover()',
+                        "page.wait_for_timeout(500)",
+                        f'page.screenshot(path=str(screens_dir / "step-{index}-hover.png"), full_page=True)',
+                    ],
+                    "Failed to hover",
+                )
             )
-            lines.append("        except Exception as e:")
-            lines.append('            print(f"Failed to hover: {e}")')
 
         elif isinstance(step, KeyPress):
             selector_text = f" on {step.selector}" if step.selector else ""
             lines.append(f"        # Step {index}: Press key '{step.key}'{selector_text}")
-            lines.append("        try:")
-            if step.selector:
-                lines.append(f'            page.locator("{step.selector}").press("{step.key}")')
-            else:
-                lines.append(f'            page.keyboard.press("{step.key}")')
-            lines.append(
-                f'            page.screenshot(path=str(screens_dir / "step-{index}-keypress.png"), full_page=True)'
+            key_action = (
+                f'page.locator("{step.selector}").press("{step.key}")'
+                if step.selector
+                else f'page.keyboard.press("{step.key}")'
             )
-            lines.append("        except Exception as e:")
-            lines.append('            print(f"Failed to press key: {e}")')
+            lines.extend(
+                _wrap_in_try_except(
+                    [
+                        key_action,
+                        f'page.screenshot(path=str(screens_dir / "step-{index}-keypress.png"), full_page=True)',
+                    ],
+                    "Failed to press key",
+                )
+            )
 
         elif isinstance(step, Upload):
             lines.append(f"        # Step {index}: Upload file to {step.selector}")
-            lines.append("        try:")
-            lines.append(f'            page.set_input_files("{step.selector}", "{step.file_path}")')
-            lines.append(
-                f'            page.screenshot(path=str(screens_dir / "step-{index}-upload.png"), full_page=True)'
+            lines.extend(
+                _wrap_in_try_except(
+                    [
+                        f'page.set_input_files("{step.selector}", "{step.file_path}")',
+                        f'page.screenshot(path=str(screens_dir / "step-{index}-upload.png"), full_page=True)',
+                    ],
+                    "Failed to upload file",
+                )
             )
-            lines.append("        except Exception as e:")
-            lines.append('            print(f"Failed to upload file: {e}")')
 
     # Extraction block - handles both simple and array extraction
     lines.append("        # Extraction per spec")

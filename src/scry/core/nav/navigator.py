@@ -117,9 +117,7 @@ def execute_plan(
                 # Small scroll and another screenshot for coverage
                 try:
                     page.evaluate("window.scrollTo(0, document.body.scrollHeight/2)")
-                    out_path2 = (
-                        screenshots_dir / f"{'' if step_index else ''}step-{step_index}-scroll.png"
-                    )
+                    out_path2 = screenshots_dir / f"step-{step_index}-scroll.png"
                     page.screenshot(path=str(out_path2), full_page=True)
                     screenshots.append(out_path2)
                 except Exception:  # noqa: S110 - screenshot failure shouldn't stop navigation

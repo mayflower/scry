@@ -99,14 +99,39 @@ def _improve_selector(selector: str) -> str:
     2. id attributes
     3. aria-label attributes
     4. Unique class combinations
-    """
-    # If already using a stable attribute, keep it
-    if any(attr in selector for attr in ["data-testid=", "#", "aria-label="]):
-        return selector
 
-    # For now, return as-is (full implementation would analyze DOM)
-    # In production, this would analyze the HTML to find better selectors
-    return selector
+    Returns improved selector or original if already optimal.
+    """
+    # Normalize whitespace
+    normalized = " ".join(selector.split())
+
+    # If already using a stable attribute, keep normalized version
+    stable_attrs = ["data-testid=", "data-test=", "aria-label="]
+    if any(attr in normalized for attr in stable_attrs):
+        return normalized
+
+    # ID selectors are already stable
+    if normalized.startswith("#") and " " not in normalized:
+        return normalized
+
+    # Simplify overly specific selectors with many classes
+    # e.g., "div.class1.class2.class3.class4" -> keep first 2 classes
+    if "." in normalized and normalized.count(".") > 3:
+        parts = normalized.split(".")
+        # Keep tag and first 2-3 classes
+        simplified = ".".join(parts[:4])
+        return simplified
+
+    # Remove nth-child pseudo-selectors that are fragile
+    if ":nth-child(" in normalized:
+        import re
+
+        # Remove nth-child but keep the rest
+        cleaned = re.sub(r":nth-child\([^)]+\)", "", normalized)
+        if cleaned and cleaned != normalized:
+            return cleaned.strip()
+
+    return normalized
 
 
 def compress_min_path_with_anthropic(
