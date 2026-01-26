@@ -1035,6 +1035,51 @@ async def _process_tool_block(
     }
 
 
+def _process_all_response_blocks(response: Any) -> tuple[list[dict[str, Any]], bool]:
+    """Process all response blocks and return assistant content and tool use flag."""
+    assistant_content: list[dict[str, Any]] = []
+    has_tool_use = False
+
+    for block in response.content:
+        content_dict, is_tool = _process_response_block(block)
+        if content_dict:
+            assistant_content.append(content_dict)
+        if is_tool:
+            has_tool_use = True
+
+    return assistant_content, has_tool_use
+
+
+async def _execute_all_tool_blocks(
+    response: Any,
+    page: Page,
+    ref_map: dict[str, str],
+    screenshots_dir: Path,
+    iteration: int,
+    job_id: str,
+    ir_actions: list[Any],
+    urls: list[str],
+    screenshots: list[Path],
+) -> list[dict[str, Any]]:
+    """Execute all tool blocks in a response and return results."""
+    tool_results: list[dict[str, Any]] = []
+    for block in response.content:
+        result = await _process_tool_block(
+            block,
+            page,
+            ref_map,
+            screenshots_dir,
+            iteration,
+            job_id,
+            ir_actions,
+            urls,
+            screenshots,
+        )
+        if result:
+            tool_results.append(result)
+    return tool_results
+
+
 async def _run_exploration_loop(
     page: Page,
     messages: list[dict[str, Any]],
@@ -1060,39 +1105,24 @@ async def _run_exploration_loop(
             print(f"[Explorer] API error: {e}")
             break
 
-        # Process response blocks
-        assistant_content: list[dict[str, Any]] = []
-        has_tool_use = False
-
-        for block in response.content:
-            content_dict, is_tool = _process_response_block(block)
-            if content_dict:
-                assistant_content.append(content_dict)
-            if is_tool:
-                has_tool_use = True
-
+        assistant_content, has_tool_use = _process_all_response_blocks(response)
         messages.append({"role": "assistant", "content": assistant_content})
 
         if not has_tool_use or response.stop_reason != "tool_use":
             print("[Explorer] Agent finished")
             break
 
-        # Execute tool actions
-        tool_results: list[dict[str, Any]] = []
-        for block in response.content:
-            result = await _process_tool_block(
-                block,
-                page,
-                ref_map,
-                screenshots_dir,
-                iteration,
-                job_id,
-                ir_actions,
-                urls,
-                screenshots,
-            )
-            if result:
-                tool_results.append(result)
+        tool_results = await _execute_all_tool_blocks(
+            response,
+            page,
+            ref_map,
+            screenshots_dir,
+            iteration,
+            job_id,
+            ir_actions,
+            urls,
+            screenshots,
+        )
 
         if tool_results:
             messages.append({"role": "user", "content": tool_results})

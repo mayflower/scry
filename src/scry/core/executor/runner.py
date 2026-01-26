@@ -153,6 +153,38 @@ def _handle_script_error(
     return True, error.stderr
 
 
+def _handle_script_result(
+    script_result: subprocess.CompletedProcess[str],
+    attempt: int,
+    execution_log: list[str],
+) -> tuple[bool, str | None]:
+    """Handle script execution result.
+
+    Returns:
+        Tuple of (should_continue_loop, error_for_patch).
+        should_continue_loop=True means retry, False means exit loop.
+    """
+    # Handle validation failure (exit code 1)
+    if script_result.returncode == 1:
+        should_retry, error_msg = _should_retry_validation(script_result, attempt, execution_log)
+        if should_retry and error_msg:
+            return True, error_msg
+        return False, None
+
+    # Handle other non-zero exit codes
+    if script_result.returncode != 0:
+        raise subprocess.CalledProcessError(
+            script_result.returncode,
+            script_result.args,
+            script_result.stdout,
+            script_result.stderr,
+        )
+
+    # Success
+    execution_log.append("script_done")
+    return False, None
+
+
 def _execute_with_self_healing(
     opt: ScrapePlan,
     job_id: str,
@@ -173,37 +205,17 @@ def _execute_with_self_healing(
 
         try:
             script_result = _run_script_once(script_path)
-
-            # Handle validation failure (exit code 1)
-            if script_result.returncode == 1:
-                should_retry, error_msg = _should_retry_validation(
-                    script_result, attempt, execution_log
-                )
-                if should_retry and error_msg:
-                    patch = propose_patch(attempt + 1, error_msg, None)
-                    options = merge_codegen_options(options, patch)
-                    continue
-                break
-
-            # Handle other non-zero exit codes
-            if script_result.returncode != 0:
-                raise subprocess.CalledProcessError(
-                    script_result.returncode,
-                    script_result.args,
-                    script_result.stdout,
-                    script_result.stderr,
-                )
-
-            execution_log.append("script_done")
-            break
-
+            should_continue, error_msg = _handle_script_result(
+                script_result, attempt, execution_log
+            )
         except subprocess.CalledProcessError as e:
-            should_retry, error_msg = _handle_script_error(e, attempt, execution_log)
-            if should_retry and error_msg:
-                patch = propose_patch(attempt + 1, error_msg, None)
-                options = merge_codegen_options(options, patch)
-            else:
-                break
+            should_continue, error_msg = _handle_script_error(e, attempt, execution_log)
+
+        if should_continue and error_msg:
+            patch = propose_patch(attempt + 1, error_msg, None)
+            options = merge_codegen_options(options, patch)
+            continue
+        break
 
 
 def _load_extracted_data(artifacts_root: Path, job_id: str, req: ScrapeRequest) -> dict[str, Any]:
