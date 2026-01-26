@@ -44,9 +44,10 @@ def _try_merge_wait_for(step: Any, optimized_steps: list[Any]) -> bool:
     if last_step.selector != step.selector:
         return False
 
-    # Keep the most restrictive wait state
+    # When merging, prioritize 'visible' over 'attached' (more restrictive)
+    # The merged step keeps the existing state, current step is discarded
     if step.state == "attached" and last_step.state == "visible":
-        last_step.state = "visible"
+        pass  # Keep last_step.state as "visible"
     return True
 
 

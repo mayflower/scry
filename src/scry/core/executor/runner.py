@@ -185,8 +185,8 @@ def _load_extracted_data(artifacts_root: Path, job_id: str, req: ScrapeRequest) 
             import json
 
             return json.loads(data_file.read_text(encoding="utf-8"))
-        except Exception:  # noqa: S110 - fallback to artifact extraction
-            pass
+        except Exception as e:  # noqa: S110 - fallback to artifact extraction
+            print(f"[Runner] Warning: Failed to load {data_file}, falling back to extraction: {e}")
     return _finalize_from_artifacts(job_id, req)
 
 

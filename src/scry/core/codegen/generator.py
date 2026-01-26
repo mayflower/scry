@@ -2,8 +2,9 @@
 
 Generates a self-contained Python script that:
 - Launches Chromium (headless toggle via injected const)
-- Executes Navigate steps
-- Captures screenshots and first page HTML
+- Executes step types: Navigate, Click, Fill, WaitFor, Validate, Select, Hover, KeyPress, Upload
+- Captures screenshots and HTML snapshots at each step
+- Performs data extraction based on the extraction spec
 
 No AI at runtime; purely deterministic.
 """

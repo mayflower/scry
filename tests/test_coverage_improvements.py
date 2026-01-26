@@ -287,7 +287,7 @@ class TestExtractAttributes:
         """Test extracting all supported attributes."""
         from scry.core.optimizer.selectors import _extract_attributes
 
-        html = '''<input data-testid="test" id="email" aria-label="Email" name="email">Enter email</input>'''
+        html = """<input data-testid="test" id="email" aria-label="Email" name="email">Enter email</input>"""
         attrs = _extract_attributes(html)
         assert attrs.get("data-testid") == "test"
         assert attrs.get("id") == "email"
@@ -484,11 +484,13 @@ class TestDOMTreeGenerator:
         from scry.adapters.dom_tree import DOMTreeGenerator
 
         generator = DOMTreeGenerator(mock_page, ref_manager)
-        selector = generator._build_selector({
-            "role": "link",
-            "name": "Home",
-            "value": "/home",
-        })
+        selector = generator._build_selector(
+            {
+                "role": "link",
+                "name": "Home",
+                "value": "/home",
+            }
+        )
         assert selector == 'a[href="/home"]'
 
     def test_build_selector_button(self, mock_page, ref_manager):
@@ -496,10 +498,12 @@ class TestDOMTreeGenerator:
         from scry.adapters.dom_tree import DOMTreeGenerator
 
         generator = DOMTreeGenerator(mock_page, ref_manager)
-        selector = generator._build_selector({
-            "role": "button",
-            "name": "Submit",
-        })
+        selector = generator._build_selector(
+            {
+                "role": "button",
+                "name": "Submit",
+            }
+        )
         assert selector == 'button:has-text("Submit")'
 
     def test_build_selector_textbox(self, mock_page, ref_manager):
@@ -547,10 +551,12 @@ class TestDOMTreeGenerator:
         from scry.adapters.dom_tree import DOMTreeGenerator
 
         generator = DOMTreeGenerator(mock_page, ref_manager)
-        attrs = generator._extract_attributes({
-            "checked": True,
-            "disabled": False,
-        })
+        attrs = generator._extract_attributes(
+            {
+                "checked": True,
+                "disabled": False,
+            }
+        )
         assert attrs["checked"] == "true"
         assert attrs["disabled"] == "false"
 
@@ -642,7 +648,9 @@ class TestAnthropicHelpers:
         """Test has_browser_tools function."""
         from scry.adapters.anthropic import has_browser_tools
 
-        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key", "BROWSER_TOOLS_ENABLED": "true"}):
+        with patch.dict(
+            os.environ, {"ANTHROPIC_API_KEY": "test-key", "BROWSER_TOOLS_ENABLED": "true"}
+        ):
             assert has_browser_tools() is True
 
         with patch.dict(os.environ, {"BROWSER_TOOLS_ENABLED": "false"}, clear=True):
@@ -766,10 +774,13 @@ class TestTelemetry:
         """Test init_telemetry handles ImportError."""
         from scry.telemetry import init_telemetry
 
-        with patch.dict(os.environ, {
-            "OTEL_ENABLED": "true",
-            "OTEL_EXPORTER_OTLP_ENDPOINT": "http://tempo:4317",
-        }):
+        with patch.dict(
+            os.environ,
+            {
+                "OTEL_ENABLED": "true",
+                "OTEL_EXPORTER_OTLP_ENDPOINT": "http://tempo:4317",
+            },
+        ):
             with patch.dict("sys.modules", {"opentelemetry": None}):
                 # ImportError should be caught and logged
                 init_telemetry()
@@ -789,6 +800,7 @@ class TestTelemetry:
         # we test the disabled path which exercises the guard clause
         with patch.dict(os.environ, {"OTEL_ENABLED": "false"}):
             from scry.telemetry import shutdown_telemetry
+
             # Should return early without error
             shutdown_telemetry()
 
@@ -1031,12 +1043,25 @@ class TestOptimizeHelpers:
         from scry.core.ir.model import Click, Fill, Navigate, Validate, WaitFor
         from scry.core.optimizer.optimize import _step_to_dict
 
-        assert _step_to_dict(Navigate(url="https://x.com")) == {"type": "navigate", "url": "https://x.com"}
+        assert _step_to_dict(Navigate(url="https://x.com")) == {
+            "type": "navigate",
+            "url": "https://x.com",
+        }
         assert _step_to_dict(Click(selector="btn")) == {"type": "click", "selector": "btn"}
-        assert _step_to_dict(Fill(selector="input", text="hello")) == {"type": "fill", "selector": "input", "text": "hello"}
-        assert _step_to_dict(WaitFor(selector="div", state="visible")) == {"type": "wait_for", "selector": "div", "state": "visible"}
+        assert _step_to_dict(Fill(selector="input", text="hello")) == {
+            "type": "fill",
+            "selector": "input",
+            "text": "hello",
+        }
+        assert _step_to_dict(WaitFor(selector="div", state="visible")) == {
+            "type": "wait_for",
+            "selector": "div",
+            "state": "visible",
+        }
 
-        validate = Validate(selector="span", validation_type="presence", is_critical=True, description="Check span")
+        validate = Validate(
+            selector="span", validation_type="presence", is_critical=True, description="Check span"
+        )
         v_dict = _step_to_dict(validate)
         assert v_dict["type"] == "validate"
         assert v_dict["is_critical"] is True
@@ -1126,12 +1151,14 @@ class TestNavigatorHelpers:
         """Test _get_http_credentials with valid credentials."""
         from scry.core.nav.navigator import _get_http_credentials
 
-        result = _get_http_credentials({
-            "http_basic": {
-                "username": "user",
-                "password": "pass",
+        result = _get_http_credentials(
+            {
+                "http_basic": {
+                    "username": "user",
+                    "password": "pass",
+                }
             }
-        })
+        )
         assert result == {"username": "user", "password": "pass"}
 
     def test_get_http_credentials_invalid_http_basic(self):
@@ -1685,7 +1712,9 @@ class TestBuildPlan:
         )
         plan = build_plan(req)
         # Should skip invalid step but include valid one and add navigation
-        assert any(step.selector == "button.valid" for step in plan.steps if hasattr(step, "selector"))
+        assert any(
+            step.selector == "button.valid" for step in plan.steps if hasattr(step, "selector")
+        )
 
     @patch("scry.core.planner.plan_builder.complete_json")
     @patch("scry.core.planner.plan_builder.has_api_key")
@@ -1772,7 +1801,9 @@ class TestBrowserExecutorActions:
 
     def test_execute_navigate_forward(self, executor_with_mock_page):
         """Test navigate forward."""
-        result = executor_with_mock_page.execute("test-id", {"action": "navigate", "text": "forward"})
+        result = executor_with_mock_page.execute(
+            "test-id", {"action": "navigate", "text": "forward"}
+        )
         executor_with_mock_page._page.go_forward.assert_called_once()
         assert result.get("is_error") is not True
 
@@ -1852,17 +1883,22 @@ class TestBrowserExecutorActions:
 
     def test_execute_scroll_invalid_direction(self, executor_with_mock_page):
         """Test scroll with invalid direction returns error."""
-        result = executor_with_mock_page.execute("test-id", {"action": "scroll", "scroll_direction": "diagonal"})
+        result = executor_with_mock_page.execute(
+            "test-id", {"action": "scroll", "scroll_direction": "diagonal"}
+        )
         assert result.get("is_error") is True
 
     def test_execute_scroll_directions(self, executor_with_mock_page):
         """Test scroll in all directions."""
         for direction in ["up", "down", "left", "right"]:
-            result = executor_with_mock_page.execute("test-id", {
-                "action": "scroll",
-                "scroll_direction": direction,
-                "scroll_amount": 2,
-            })
+            result = executor_with_mock_page.execute(
+                "test-id",
+                {
+                    "action": "scroll",
+                    "scroll_direction": direction,
+                    "scroll_amount": 2,
+                },
+            )
             assert result.get("is_error") is not True
 
     def test_execute_wait(self, executor_with_mock_page):
@@ -1883,7 +1919,9 @@ class TestBrowserExecutorActions:
 
     def test_execute_hold_key(self, executor_with_mock_page):
         """Test hold_key action."""
-        result = executor_with_mock_page.execute("test-id", {"action": "hold_key", "text": "Shift", "duration": 0.1})
+        result = executor_with_mock_page.execute(
+            "test-id", {"action": "hold_key", "text": "Shift", "duration": 0.1}
+        )
         assert result.get("is_error") is not True
 
     def test_execute_zoom_no_region(self, executor_with_mock_page):
@@ -1898,7 +1936,9 @@ class TestBrowserExecutorActions:
 
     def test_execute_zoom(self, executor_with_mock_page):
         """Test zoom action."""
-        result = executor_with_mock_page.execute("test-id", {"action": "zoom", "region": [0, 0, 100, 100]})
+        result = executor_with_mock_page.execute(
+            "test-id", {"action": "zoom", "region": [0, 0, 100, 100]}
+        )
         assert result.get("is_error") is not True
 
     def test_execute_find_no_query(self, executor_with_mock_page):
@@ -1918,29 +1958,39 @@ class TestBrowserExecutorActions:
 
     def test_execute_left_click_coordinate(self, executor_with_mock_page):
         """Test left_click with coordinate."""
-        result = executor_with_mock_page.execute("test-id", {"action": "left_click", "coordinate": [100, 200]})
+        result = executor_with_mock_page.execute(
+            "test-id", {"action": "left_click", "coordinate": [100, 200]}
+        )
         assert result.get("is_error") is not True
         executor_with_mock_page._page.mouse.click.assert_called()
 
     def test_execute_right_click_coordinate(self, executor_with_mock_page):
         """Test right_click with coordinate."""
-        result = executor_with_mock_page.execute("test-id", {"action": "right_click", "coordinate": [100, 200]})
+        result = executor_with_mock_page.execute(
+            "test-id", {"action": "right_click", "coordinate": [100, 200]}
+        )
         assert result.get("is_error") is not True
 
     def test_execute_middle_click_coordinate(self, executor_with_mock_page):
         """Test middle_click with coordinate."""
-        result = executor_with_mock_page.execute("test-id", {"action": "middle_click", "coordinate": [100, 200]})
+        result = executor_with_mock_page.execute(
+            "test-id", {"action": "middle_click", "coordinate": [100, 200]}
+        )
         assert result.get("is_error") is not True
 
     def test_execute_double_click_coordinate(self, executor_with_mock_page):
         """Test double_click with coordinate."""
-        result = executor_with_mock_page.execute("test-id", {"action": "double_click", "coordinate": [100, 200]})
+        result = executor_with_mock_page.execute(
+            "test-id", {"action": "double_click", "coordinate": [100, 200]}
+        )
         assert result.get("is_error") is not True
         executor_with_mock_page._page.mouse.dblclick.assert_called()
 
     def test_execute_triple_click_coordinate(self, executor_with_mock_page):
         """Test triple_click with coordinate."""
-        result = executor_with_mock_page.execute("test-id", {"action": "triple_click", "coordinate": [100, 200]})
+        result = executor_with_mock_page.execute(
+            "test-id", {"action": "triple_click", "coordinate": [100, 200]}
+        )
         assert result.get("is_error") is not True
 
     def test_execute_drag_invalid_coords(self, executor_with_mock_page):
@@ -1948,19 +1998,25 @@ class TestBrowserExecutorActions:
         result = executor_with_mock_page.execute("test-id", {"action": "left_click_drag"})
         assert result.get("is_error") is True
 
-        result = executor_with_mock_page.execute("test-id", {
-            "action": "left_click_drag",
-            "start_coordinate": [0, 0],
-        })
+        result = executor_with_mock_page.execute(
+            "test-id",
+            {
+                "action": "left_click_drag",
+                "start_coordinate": [0, 0],
+            },
+        )
         assert result.get("is_error") is True
 
     def test_execute_drag(self, executor_with_mock_page):
         """Test drag action."""
-        result = executor_with_mock_page.execute("test-id", {
-            "action": "left_click_drag",
-            "start_coordinate": [0, 0],
-            "coordinate": [100, 100],
-        })
+        result = executor_with_mock_page.execute(
+            "test-id",
+            {
+                "action": "left_click_drag",
+                "start_coordinate": [0, 0],
+                "coordinate": [100, 100],
+            },
+        )
         assert result.get("is_error") is not True
 
     def test_execute_mouse_down_invalid(self, executor_with_mock_page):
@@ -1970,7 +2026,9 @@ class TestBrowserExecutorActions:
 
     def test_execute_mouse_down(self, executor_with_mock_page):
         """Test mouse_down action."""
-        result = executor_with_mock_page.execute("test-id", {"action": "left_mouse_down", "coordinate": [100, 200]})
+        result = executor_with_mock_page.execute(
+            "test-id", {"action": "left_mouse_down", "coordinate": [100, 200]}
+        )
         assert result.get("is_error") is not True
 
     def test_execute_mouse_up_invalid(self, executor_with_mock_page):
@@ -1980,7 +2038,9 @@ class TestBrowserExecutorActions:
 
     def test_execute_mouse_up(self, executor_with_mock_page):
         """Test mouse_up action."""
-        result = executor_with_mock_page.execute("test-id", {"action": "left_mouse_up", "coordinate": [100, 200]})
+        result = executor_with_mock_page.execute(
+            "test-id", {"action": "left_mouse_up", "coordinate": [100, 200]}
+        )
         assert result.get("is_error") is not True
 
     def test_execute_scroll_to_no_ref(self, executor_with_mock_page):
@@ -2003,31 +2063,41 @@ class TestBrowserExecutorActions:
 
     def test_execute_left_click_with_ref_not_found(self, executor_with_mock_page):
         """Test left_click with ref that doesn't exist."""
-        result = executor_with_mock_page.execute("test-id", {"action": "left_click", "ref": "ref_999"})
+        result = executor_with_mock_page.execute(
+            "test-id", {"action": "left_click", "ref": "ref_999"}
+        )
         assert result["is_error"] is True
         assert "Element not found" in result["content"][0]["text"]
 
     def test_execute_right_click_with_ref_not_found(self, executor_with_mock_page):
         """Test right_click with ref that doesn't exist."""
-        result = executor_with_mock_page.execute("test-id", {"action": "right_click", "ref": "ref_999"})
+        result = executor_with_mock_page.execute(
+            "test-id", {"action": "right_click", "ref": "ref_999"}
+        )
         assert result["is_error"] is True
         assert "Element not found" in result["content"][0]["text"]
 
     def test_execute_middle_click_with_ref_not_found(self, executor_with_mock_page):
         """Test middle_click with ref that doesn't exist."""
-        result = executor_with_mock_page.execute("test-id", {"action": "middle_click", "ref": "ref_999"})
+        result = executor_with_mock_page.execute(
+            "test-id", {"action": "middle_click", "ref": "ref_999"}
+        )
         assert result["is_error"] is True
         assert "Element not found" in result["content"][0]["text"]
 
     def test_execute_double_click_with_ref_not_found(self, executor_with_mock_page):
         """Test double_click with ref that doesn't exist."""
-        result = executor_with_mock_page.execute("test-id", {"action": "double_click", "ref": "ref_999"})
+        result = executor_with_mock_page.execute(
+            "test-id", {"action": "double_click", "ref": "ref_999"}
+        )
         assert result["is_error"] is True
         assert "Element not found" in result["content"][0]["text"]
 
     def test_execute_triple_click_with_ref_not_found(self, executor_with_mock_page):
         """Test triple_click with ref that doesn't exist."""
-        result = executor_with_mock_page.execute("test-id", {"action": "triple_click", "ref": "ref_999"})
+        result = executor_with_mock_page.execute(
+            "test-id", {"action": "triple_click", "ref": "ref_999"}
+        )
         assert result["is_error"] is True
         assert "Element not found" in result["content"][0]["text"]
 
@@ -2100,7 +2170,9 @@ class TestBrowserExecutorRefClicks:
     def test_click_element_with_modifiers(self, executor_with_element):
         """Test _click_element with modifiers."""
         executor, mock_element = executor_with_element
-        executor._click_element(mock_element, button="right", click_count=2, modifiers=["Shift", "Control"])
+        executor._click_element(
+            mock_element, button="right", click_count=2, modifiers=["Shift", "Control"]
+        )
         mock_element.click.assert_called_once()
         call_kwargs = mock_element.click.call_args[1]
         assert call_kwargs["button"] == "right"
@@ -2204,13 +2276,17 @@ class TestBrowserExecutorMoreActions:
     def test_form_input_with_ref(self, executor_with_element_and_ref):
         """Test form_input with valid ref."""
         executor = executor_with_element_and_ref
-        result = executor.execute("test-id", {"action": "form_input", "ref": "ref_0", "text": "test value"})
+        result = executor.execute(
+            "test-id", {"action": "form_input", "ref": "ref_0", "text": "test value"}
+        )
         assert result.get("is_error") is not True
 
     def test_form_input_ref_not_found(self, executor_with_element_and_ref):
         """Test form_input with invalid ref."""
         executor = executor_with_element_and_ref
-        result = executor.execute("test-id", {"action": "form_input", "ref": "ref_invalid", "text": "test"})
+        result = executor.execute(
+            "test-id", {"action": "form_input", "ref": "ref_invalid", "text": "test"}
+        )
         assert result["is_error"] is True
 
     def test_get_page_text_content_found(self, executor_with_element_and_ref):
@@ -2249,6 +2325,7 @@ class TestRunnerHelpers:
         from scry.core.executor.runner import _emit_exploration_progress
 
         callback_data = []
+
         def callback(data):
             callback_data.append(data)
 
@@ -2464,9 +2541,7 @@ class TestNavigatorCreateBrowserContext:
         from scry.core.nav.navigator import _create_browser_context
 
         mock_browser = MagicMock()
-        login_params = {
-            "http_basic": {"username": "user", "password": "pass"}
-        }
+        login_params = {"http_basic": {"username": "user", "password": "pass"}}
         _context = _create_browser_context(mock_browser, login_params)
         mock_browser.new_context.assert_called_once_with(
             http_credentials={"username": "user", "password": "pass"}
@@ -2493,8 +2568,7 @@ class TestNavigatorCaptureArtifacts:
             screenshots: list[Path] = []
 
             _capture_artifacts(
-                mock_page, 1, screenshots_dir, html_dir, "test-job",
-                html_snapshots, screenshots
+                mock_page, 1, screenshots_dir, html_dir, "test-job", html_snapshots, screenshots
             )
 
             # Should have taken screenshots
@@ -2522,8 +2596,7 @@ class TestNavigatorCaptureArtifacts:
 
             # Should not raise
             _capture_artifacts(
-                mock_page, 1, screenshots_dir, html_dir, "test-job",
-                html_snapshots, screenshots
+                mock_page, 1, screenshots_dir, html_dir, "test-job", html_snapshots, screenshots
             )
 
 
@@ -2785,17 +2858,19 @@ class TestRenderSteps:
             WaitFor,
         )
 
-        plan = ScrapePlan(steps=[
-            Navigate(url="https://example.com"),
-            Click(selector="button"),
-            Fill(selector="input", text="hello"),
-            WaitFor(selector="div", state="visible"),
-            Select(selector="select", value="opt1"),
-            Hover(selector="div.menu"),
-            KeyPress(key="Enter"),
-            Upload(selector="input[type=file]", file_path="/file.txt"),
-            Validate(selector="div", validation_type="presence"),
-        ])
+        plan = ScrapePlan(
+            steps=[
+                Navigate(url="https://example.com"),
+                Click(selector="button"),
+                Fill(selector="input", text="hello"),
+                WaitFor(selector="div", state="visible"),
+                Select(selector="select", value="opt1"),
+                Hover(selector="div.menu"),
+                KeyPress(key="Enter"),
+                Upload(selector="input[type=file]", file_path="/file.txt"),
+                Validate(selector="div", validation_type="presence"),
+            ]
+        )
 
         code = _render_steps(plan)
 
@@ -2930,11 +3005,13 @@ class TestOptimizePlan:
         from scry.core.ir.model import Click, ScrapePlan
         from scry.core.optimizer.optimize import optimize_plan
 
-        plan = ScrapePlan(steps=[
-            Click(selector="button"),
-            Click(selector="button"),  # Duplicate
-            Click(selector="other"),
-        ])
+        plan = ScrapePlan(
+            steps=[
+                Click(selector="button"),
+                Click(selector="button"),  # Duplicate
+                Click(selector="other"),
+            ]
+        )
 
         result = optimize_plan(plan)
         # Should have removed the duplicate
@@ -2945,10 +3022,12 @@ class TestOptimizePlan:
         from scry.core.ir.model import Navigate, ScrapePlan, WaitFor
         from scry.core.optimizer.optimize import optimize_plan
 
-        plan = ScrapePlan(steps=[
-            Navigate(url="https://example.com"),
-            WaitFor(selector="body", state="visible"),  # Redundant after Navigate
-        ])
+        plan = ScrapePlan(
+            steps=[
+                Navigate(url="https://example.com"),
+                WaitFor(selector="body", state="visible"),  # Redundant after Navigate
+            ]
+        )
 
         result = optimize_plan(plan)
         assert len(result.steps) == 1
@@ -2958,10 +3037,12 @@ class TestOptimizePlan:
         from scry.core.ir.model import ScrapePlan, WaitFor
         from scry.core.optimizer.optimize import optimize_plan
 
-        plan = ScrapePlan(steps=[
-            WaitFor(selector="div", state="attached"),
-            WaitFor(selector="div", state="visible"),
-        ])
+        plan = ScrapePlan(
+            steps=[
+                WaitFor(selector="div", state="attached"),
+                WaitFor(selector="div", state="visible"),
+            ]
+        )
 
         result = optimize_plan(plan)
         # Should merge into one
@@ -3120,11 +3201,13 @@ class TestNavigatorExecutePlanWithSteps:
 
         mock_playwright.return_value.__enter__.return_value = mock_pw_instance
 
-        plan = ScrapePlan(steps=[
-            Navigate(url="https://example.com"),
-            Fill(selector="input#username", text="user"),
-            Click(selector="button#submit"),
-        ])
+        plan = ScrapePlan(
+            steps=[
+                Navigate(url="https://example.com"),
+                Fill(selector="input#username", text="user"),
+                Click(selector="button#submit"),
+            ]
+        )
 
         with TemporaryDirectory() as tmpdir:
             html_snapshots, screenshots = execute_plan(
@@ -3156,7 +3239,9 @@ class TestAnthropicClient:
         mock_client_instance = MagicMock()
 
         with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key-123"}, clear=True):
-            with patch("anthropic.Anthropic", return_value=mock_client_instance) as mock_anthropic_class:
+            with patch(
+                "anthropic.Anthropic", return_value=mock_client_instance
+            ) as mock_anthropic_class:
                 client = _client()
 
                 mock_anthropic_class.assert_called_once_with(api_key="test-key-123")

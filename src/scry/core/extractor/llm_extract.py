@@ -23,6 +23,6 @@ def extract_from_text(
         data, _ = complete_json(sys, user, max_tokens=600)
         if isinstance(data, dict):
             return data
-    except Exception:  # noqa: S110 - return empty dict on LLM failure
-        pass
+    except Exception as e:  # noqa: S110 - return empty dict on LLM failure
+        print(f"[Extractor] LLM extraction failed: {type(e).__name__}: {e}")
     return {}
