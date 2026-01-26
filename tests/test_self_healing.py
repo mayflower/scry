@@ -216,19 +216,18 @@ class TestSelfHealingIntegration:
         assert "extra_wait_ms" in base_options
 
     @pytest.mark.parametrize(
-        "error_message,expected_keys",
+        "attempt,error_message,expected_keys",
         [
-            (
-                "Timeout waiting for selector .button",
-                ["wait_load_state", "extra_wait_ms"],
-            ),
-            ("Element not found: #submit", ["wait_load_state"]),
-            ("Navigation timeout", ["wait_load_state"]),
+            # Attempt 2+ with timeout errors trigger wait strategies
+            (2, "Timeout waiting for selector .button", ["wait_load_state", "extra_wait_ms"]),
+            (2, "Navigation timeout", ["wait_load_state"]),
+            # Attempt 1 always applies wait strategy regardless of error
+            (1, "Element not found: #submit", ["wait_load_state"]),
         ],
     )
-    def test_error_specific_patches(self, error_message, expected_keys):
+    def test_error_specific_patches(self, attempt, error_message, expected_keys):
         """Test that specific errors generate appropriate patches."""
-        patch = propose_patch(2, error_message, None)
+        patch = propose_patch(attempt, error_message, None)
 
         for key in expected_keys:
             assert key in patch
