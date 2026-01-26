@@ -60,6 +60,13 @@ markers = [
 # Use relative paths in coverage.xml for SonarQube compatibility
 relative_files = true
 source = ["src"]
+# Omit infrastructure files that require browser/external services to test
+omit = [
+    "src/scry/adapters/browser_pool.py",
+    "src/scry/adapters/playwright_explorer.py",
+    "src/scry/mcp_server.py",
+    "src/scry/telemetry.py",
+]
 
 [tool.coverage.xml]
 output = "coverage.xml"
