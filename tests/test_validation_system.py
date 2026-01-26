@@ -536,8 +536,8 @@ class TestEndToEndValidation:
             repair_logs = [log for log in result.execution_log if "repair_attempt" in log]
             assert len(repair_logs) > 0
         elif "validation_ok" in result.execution_log:
-            # Validation passed
-            assert True
+            # Validation passed - verify it's recorded in the log
+            assert result.execution_log.count("validation_ok") >= 1
         else:
             # Should have some validation result
             assert "script_done" in result.execution_log

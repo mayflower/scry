@@ -248,9 +248,10 @@ class AsyncBrowserPool:
 
         pooled: PooledBrowser | None = None
         try:
-            # Get a browser from the pool
+            # Get a browser from the pool using timeout context manager
             try:
-                pooled = await asyncio.wait_for(self._pool.get(), timeout=timeout)
+                async with asyncio.timeout(timeout):
+                    pooled = await self._pool.get()
             except TimeoutError:
                 raise TimeoutError(f"No browser available within {timeout}s") from None
 

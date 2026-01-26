@@ -38,24 +38,24 @@ def _meta_content(soup: BeautifulSoup, name: str) -> str | None:
 # Each extractor handles a specific field type pattern
 
 
-def _extract_title(soup: BeautifulSoup, key: str) -> str | None:
+def _extract_title(soup: BeautifulSoup, _key: str) -> str | None:
     """Extract title-like fields from <title> or headings."""
     if soup.title and soup.title.string:
         return soup.title.string.strip()
     return _first_text(soup, ["h1", "h2", "header h1"])
 
 
-def _extract_heading(soup: BeautifulSoup, key: str) -> str | None:
+def _extract_heading(soup: BeautifulSoup, _key: str) -> str | None:
     """Extract heading fields from h1/h2/h3 tags."""
     return _first_text(soup, ["h1", "h2", "h3", "header h1"])
 
 
-def _extract_name(soup: BeautifulSoup, key: str) -> str | None:
+def _extract_name(soup: BeautifulSoup, _key: str) -> str | None:
     """Extract name fields from headings or .name classes."""
     return _first_text(soup, ["h1", "h2", "h3", ".name", "[class*='name']"])
 
 
-def _extract_description(soup: BeautifulSoup, key: str) -> str | None:
+def _extract_description(soup: BeautifulSoup, _key: str) -> str | None:
     """Extract description from meta tag or paragraph elements."""
     return _meta_content(soup, "description") or _first_text(
         soup, [".description", "p.description", "p", "article p"]
@@ -152,7 +152,7 @@ def _extract_generic_array(soup: BeautifulSoup, key: str) -> list[str]:
     return _extract_text_from_class_matches(soup, key)
 
 
-def _extract_features(soup: BeautifulSoup, key: str) -> list[str]:
+def _extract_features(soup: BeautifulSoup, _key: str) -> list[str]:
     """Extract features array from lists with 'feature' in class name."""
     features: list[str] = []
 
@@ -172,7 +172,7 @@ def _extract_features(soup: BeautifulSoup, key: str) -> list[str]:
     return features
 
 
-def _extract_tags(soup: BeautifulSoup, key: str) -> list[str]:
+def _extract_tags(soup: BeautifulSoup, _key: str) -> list[str]:
     """Extract tags array from elements with 'tag' in class name."""
     tags: list[str] = []
 
@@ -187,7 +187,7 @@ def _extract_tags(soup: BeautifulSoup, key: str) -> list[str]:
 
 
 def _extract_links(
-    soup: BeautifulSoup, key: str, base_url: str | None, items_type: str
+    soup: BeautifulSoup, _key: str, base_url: str | None, items_type: str
 ) -> list[Any]:
     """Extract links from anchor tags."""
     links: list[Any] = []
@@ -210,7 +210,7 @@ def _extract_links(
     return links
 
 
-def _extract_images(soup: BeautifulSoup, key: str, base_url: str | None) -> list[str]:
+def _extract_images(soup: BeautifulSoup, _key: str, base_url: str | None) -> list[str]:
     """Extract image URLs from img tags."""
     imgs: list[str] = []
 
