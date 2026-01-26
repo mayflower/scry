@@ -252,7 +252,6 @@ def extract_data(
                         break
                 if imgs:
                     out[key] = imgs
-                continue
 
     # If schema is not object or nothing matched, return best-effort minimal data
     return normalize_against_schema(schema, out)

@@ -33,6 +33,9 @@ _INDENT = "        "
 _TRY_BLOCK = f"{_INDENT}try:"
 _NESTED_INDENT = f"{_INDENT}    "
 _EXCEPT_BLOCK = f"{_INDENT}except Exception as e:"
+# Extraction block indentation (16 spaces = 4 levels)
+_EXTRACT_INDENT = "                "
+_EXTRACT_TRY = f"{_EXTRACT_INDENT}try:"
 
 
 def _wrap_in_try_except(
@@ -269,7 +272,7 @@ def _render_steps(
     lines.append("                fields_spec = spec.get('fields', {})")
     lines.append("                limit = spec.get('limit', 10)")
     lines.append("                items = []")
-    lines.append("                try:")
+    lines.append(_EXTRACT_TRY)
     lines.append("                    elements = page.locator(parent_sel).all()[:limit]")
     lines.append("                    for elem in elements:")
     lines.append("                        item = {}")
@@ -296,7 +299,7 @@ def _render_steps(
     lines.append("                # Simple field extraction")
     lines.append("                sel = spec.get('selector') if isinstance(spec, dict) else None")
     lines.append("                if not sel: continue")
-    lines.append("                try:")
+    lines.append(_EXTRACT_TRY)
     lines.append("                    text = page.locator(sel).first.text_content()")
     lines.append("                    if text:")
     lines.append("                        text = text.strip()")
@@ -311,7 +314,7 @@ def _render_steps(
     lines.append("                    if m:")
     lines.append("                        text = m.group(1) if m.groups() else m.group(0)")
     lines.append("                # Attempt number cast")
-    lines.append("                try:")
+    lines.append(_EXTRACT_TRY)
     lines.append("                    if text and all(c.isdigit() or c in ',. ' for c in text):")
     lines.append("                        num = int(''.join([c for c in text if c.isdigit()]))")
     lines.append("                        result[field] = num")

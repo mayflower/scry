@@ -177,3 +177,139 @@ class TestPlaywrightExplorerUnusedParams:
 
         sig = inspect.signature(_explore_with_browser_tools)
         assert "login_params" in sig.parameters
+
+
+class TestCodeGeneratorConstants:
+    """Tests for code generator extraction constants.
+
+    SonarQube S1192: Define constants for duplicated string literals.
+    """
+
+    def test_extraction_indent_constant(self):
+        """Extraction indent constant should be 16 spaces (4 levels)."""
+        from scry.core.codegen.generator import _EXTRACT_INDENT, _EXTRACT_TRY
+
+        assert _EXTRACT_INDENT == "                "  # 16 spaces
+        assert len(_EXTRACT_INDENT) == 16
+        assert f"{_EXTRACT_INDENT}try:" == _EXTRACT_TRY
+
+    def test_basic_indent_constants(self):
+        """Basic indent constants should be defined correctly."""
+        from scry.core.codegen.generator import (
+            _EXCEPT_BLOCK,
+            _INDENT,
+            _NESTED_INDENT,
+            _TRY_BLOCK,
+        )
+
+        assert _INDENT == "        "  # 8 spaces
+        assert len(_INDENT) == 8
+        assert f"{_INDENT}    " == _NESTED_INDENT  # 12 spaces
+        assert f"{_INDENT}try:" == _TRY_BLOCK
+        assert f"{_INDENT}except Exception as e:" == _EXCEPT_BLOCK
+
+
+class TestImproveSelectorEdgeCases:
+    """Additional edge case tests for _improve_selector.
+
+    Ensure comprehensive coverage of all code paths.
+    """
+
+    def test_data_test_attribute_preserved(self):
+        """data-test attribute should also be preserved."""
+        selector = '[data-test="button"]'
+        result = _improve_selector(selector)
+        assert result == selector
+
+    def test_aria_label_preserved(self):
+        """aria-label attribute should be preserved."""
+        selector = '[aria-label="Close"]'
+        result = _improve_selector(selector)
+        assert result == selector
+
+    def test_id_with_space_not_treated_as_stable(self):
+        """ID selector with descendant should not be treated as simple ID."""
+        selector = "#parent .child"
+        result = _improve_selector(selector)
+        # This is not a simple #id selector, so may be modified
+        assert result is not None
+
+    def test_nth_child_complex_pattern(self):
+        """Should handle various nth-child patterns."""
+        selectors = [
+            "li:nth-child(2n+1)",
+            "div:nth-child(odd)",
+            "span:nth-child(even)",
+        ]
+        for selector in selectors:
+            result = _improve_selector(selector)
+            assert ":nth-child" not in result
+
+    def test_empty_selector(self):
+        """Empty selector should return empty string."""
+        result = _improve_selector("")
+        assert result == ""
+
+    def test_whitespace_only_selector(self):
+        """Whitespace-only selector should be normalized to empty."""
+        result = _improve_selector("   ")
+        assert result == ""
+
+
+class TestSimplifySelectorEdgeCases:
+    """Additional edge case tests for improve_selector_resilience.
+
+    SonarQube S5361: Ensure str.replace optimization works correctly.
+    """
+
+    def test_deeply_nested_selector_simplified(self):
+        """Deeply nested selectors should be simplified to last 2 levels."""
+        selector = "html body div main section article p span"
+        result = improve_selector_resilience(selector)
+        # Should keep only last 2 levels
+        assert result.count(" ") <= 1
+
+    def test_name_attribute_preserved(self):
+        """name= attribute should be preserved."""
+        selector = '[name="email"]'
+        result = improve_selector_resilience(selector)
+        assert result == selector
+
+    def test_combined_pseudo_selectors_removed(self):
+        """Multiple pseudo-selectors should all be removed."""
+        selector = "ul li:first-child:nth-child(1)"
+        result = improve_selector_resilience(selector)
+        assert ":first-child" not in result
+        assert ":nth-child" not in result
+
+
+class TestWrapInTryExceptEdgeCases:
+    """Additional edge case tests for _wrap_in_try_except helper."""
+
+    def test_empty_action_lines(self):
+        """Should handle empty action lines list."""
+        lines = _wrap_in_try_except([], "No actions")
+        code = "\n".join(lines)
+        assert "try:" in code
+        assert "except Exception as e:" in code
+        assert "No actions" in code
+
+    def test_error_message_with_special_chars(self):
+        """Should handle error messages with special characters."""
+        lines = _wrap_in_try_except(
+            ["action()"],
+            "Failed: selector='div.class'",
+        )
+        code = "\n".join(lines)
+        assert "selector='div.class'" in code
+
+    def test_deeply_nested_indent(self):
+        """Should support deeply nested indentation."""
+        indent = "                "  # 16 spaces
+        lines = _wrap_in_try_except(
+            ["nested_action()"],
+            "Deep error",
+            indent=indent,
+        )
+        assert lines[0].startswith(indent)
+        assert lines[0] == f"{indent}try:"

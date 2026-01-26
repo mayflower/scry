@@ -366,7 +366,7 @@ Already visited: {len(visited_urls)} URLs{credentials_notice}
 Decide next action (JSON only):"""
 
     try:
-        data, raw = complete_json(sys_prompt, user_prompt, max_tokens=300)
+        data, _ = complete_json(sys_prompt, user_prompt, max_tokens=300)
         print(f"[Explorer] LLM action: {data}")
         return data if isinstance(data, dict) else None
     except Exception as e:
@@ -685,20 +685,20 @@ async def _execute_browser_action(
         elif action == "scroll":
             if not scroll_direction:
                 scroll_direction = "down"
-            delta_y = (
-                scroll_amount * 100
-                if scroll_direction == "down"
-                else -scroll_amount * 100
-                if scroll_direction == "up"
-                else 0
-            )
-            delta_x = (
-                scroll_amount * 100
-                if scroll_direction == "right"
-                else -scroll_amount * 100
-                if scroll_direction == "left"
-                else 0
-            )
+            # Calculate scroll deltas based on direction
+            if scroll_direction == "down":
+                delta_y = scroll_amount * 100
+            elif scroll_direction == "up":
+                delta_y = -scroll_amount * 100
+            else:
+                delta_y = 0
+
+            if scroll_direction == "right":
+                delta_x = scroll_amount * 100
+            elif scroll_direction == "left":
+                delta_x = -scroll_amount * 100
+            else:
+                delta_x = 0
             await page.evaluate(f"window.scrollBy({delta_x}, {delta_y})")
             await page.wait_for_timeout(500)
             screenshot_bytes = await page.screenshot()
