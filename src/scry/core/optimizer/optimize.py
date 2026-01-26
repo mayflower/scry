@@ -10,21 +10,68 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from ...adapters.anthropic import complete_json, has_api_key
-from ..ir.model import Click, Fill, Navigate, PlanStep, ScrapePlan, WaitFor
+from ..ir.model import Click, Fill, Navigate, PlanStep, ScrapePlan, Validate, WaitFor
 
 if TYPE_CHECKING:
     from ..nav.explore import ExplorationResult
 
 
-def optimize_plan(plan: ScrapePlan) -> ScrapePlan:
-    """Optimize the plan by removing redundant steps and improving selectors.
+# --- Optimization Helpers ---
 
-    Optimizations applied:
-    1. Remove consecutive duplicate steps
-    2. Merge consecutive WaitFor steps for the same selector
-    3. Remove unnecessary waits after navigations
-    4. Improve selector resilience
+
+def _is_duplicate_step(prev_step: Any, step: Any) -> bool:
+    """Check if step is a duplicate of the previous step."""
+    return prev_step is not None and _steps_are_equal(prev_step, step)
+
+
+def _is_redundant_wait_after_navigate(step: Any, prev_step: Any) -> bool:
+    """Check if WaitFor is redundant after Navigate."""
+    return isinstance(step, WaitFor) and prev_step and isinstance(prev_step, Navigate)
+
+
+def _try_merge_wait_for(step: Any, optimized_steps: list[Any]) -> bool:
+    """Try to merge consecutive WaitFor steps for same selector.
+
+    Returns True if step was merged, False otherwise.
     """
+    if not isinstance(step, WaitFor):
+        return False
+    if not optimized_steps:
+        return False
+    last_step = optimized_steps[-1]
+    if not isinstance(last_step, WaitFor):
+        return False
+    if last_step.selector != step.selector:
+        return False
+
+    # Keep the most restrictive wait state
+    if step.state == "attached" and last_step.state == "visible":
+        last_step.state = "visible"
+    return True
+
+
+def _handle_validate_step(step: Any, optimized_steps: list[Any]) -> bool:
+    """Handle a Validate step, adding it only if it validates a real action.
+
+    Returns True if step was handled, False otherwise.
+    """
+    if not isinstance(step, Validate):
+        return False
+
+    # Only add validation if there's a preceding action to validate
+    if optimized_steps and not isinstance(optimized_steps[-1], Validate):
+        optimized_steps.append(step)
+    return True
+
+
+def _improve_step_selector(step: Any) -> None:
+    """Improve selector for Click or Fill steps."""
+    if isinstance(step, (Click, Fill)) and step.selector:
+        step.selector = _improve_selector(step.selector)
+
+
+def optimize_plan(plan: ScrapePlan) -> ScrapePlan:
+    """Optimize the plan by removing redundant steps and improving selectors."""
     if not plan.steps:
         return plan
 
@@ -33,37 +80,23 @@ def optimize_plan(plan: ScrapePlan) -> ScrapePlan:
 
     for step in plan.steps:
         # Skip duplicate consecutive steps
-        if prev_step and _steps_are_equal(prev_step, step):
+        if _is_duplicate_step(prev_step, step):
             continue
 
-        # Skip WaitFor immediately after Navigate (navigation already waits)
-        if isinstance(step, WaitFor) and prev_step and isinstance(prev_step, Navigate):
+        # Skip WaitFor immediately after Navigate
+        if _is_redundant_wait_after_navigate(step, prev_step):
             continue
 
         # Merge consecutive WaitFor for same selector
-        if (
-            isinstance(step, WaitFor)
-            and optimized_steps
-            and isinstance(optimized_steps[-1], WaitFor)
-            and optimized_steps[-1].selector == step.selector
-        ):
-            # Keep the most restrictive wait state
-            if step.state == "attached" and optimized_steps[-1].state == "visible":
-                optimized_steps[-1].state = "visible"
+        if _try_merge_wait_for(step, optimized_steps):
             continue
 
-        # For Validate steps, only keep if they validate real actions
-        from ..ir.model import Validate
-
-        if isinstance(step, Validate):
-            # Only add validation if there's a preceding action to validate
-            if optimized_steps and not isinstance(optimized_steps[-1], Validate):
-                optimized_steps.append(step)
+        # Handle Validate steps specially
+        if _handle_validate_step(step, optimized_steps):
             continue
 
-        # Improve selector if it's a Click or Fill
-        if isinstance(step, (Click, Fill)) and step.selector:
-            step.selector = _improve_selector(step.selector)
+        # Improve selector if applicable
+        _improve_step_selector(step)
 
         optimized_steps.append(step)
         prev_step = step
@@ -85,84 +118,125 @@ def _steps_are_equal(step1: Any, step2: Any) -> bool:
         return step1.selector == step2.selector and step1.text == step2.text
     if isinstance(step1, WaitFor):
         return step1.selector == step2.selector and step1.state == step2.state
-    # Note: Validate steps are intentionally not compared for equality
-    # as we want to preserve all validation checkpoints
+    # Validate steps are not compared for equality - preserve all checkpoints
 
     return False
 
 
+# --- Selector Improvement ---
+
+
+def _has_stable_attribute(selector: str) -> bool:
+    """Check if selector uses stable attributes."""
+    stable_attrs = ["data-testid=", "data-test=", "aria-label="]
+    return any(attr in selector for attr in stable_attrs)
+
+
+def _is_simple_id_selector(selector: str) -> bool:
+    """Check if selector is a simple #id selector."""
+    return selector.startswith("#") and " " not in selector
+
+
+def _simplify_multi_class_selector(selector: str) -> str | None:
+    """Simplify selector with many classes to first 4 parts."""
+    if "." not in selector or selector.count(".") <= 3:
+        return None
+    parts = selector.split(".")
+    return ".".join(parts[:4])
+
+
+def _remove_nth_child(selector: str) -> str | None:
+    """Remove fragile nth-child pseudo-selectors."""
+    if ":nth-child(" not in selector:
+        return None
+    import re
+
+    cleaned = re.sub(r":nth-child\([^)]+\)", "", selector)
+    if cleaned and cleaned != selector:
+        return cleaned.strip()
+    return None
+
+
 def _improve_selector(selector: str) -> str:
-    """Improve selector for better resilience.
-
-    Prioritizes:
-    1. data-testid attributes
-    2. id attributes
-    3. aria-label attributes
-    4. Unique class combinations
-
-    Returns improved selector or original if already optimal.
-    """
-    # Normalize whitespace
+    """Improve selector for better resilience."""
     normalized = " ".join(selector.split())
 
-    # If already using a stable attribute, keep normalized version
-    stable_attrs = ["data-testid=", "data-test=", "aria-label="]
-    if any(attr in normalized for attr in stable_attrs):
+    if _has_stable_attribute(normalized):
         return normalized
 
-    # ID selectors are already stable
-    if normalized.startswith("#") and " " not in normalized:
+    if _is_simple_id_selector(normalized):
         return normalized
 
-    # Simplify overly specific selectors with many classes
-    # e.g., "div.class1.class2.class3.class4" -> keep first 2 classes
-    if "." in normalized and normalized.count(".") > 3:
-        parts = normalized.split(".")
-        # Keep tag and first 2-3 classes
-        simplified = ".".join(parts[:4])
+    simplified = _simplify_multi_class_selector(normalized)
+    if simplified:
         return simplified
 
-    # Remove nth-child pseudo-selectors that are fragile
-    if ":nth-child(" in normalized:
-        import re
-
-        # Remove nth-child but keep the rest
-        cleaned = re.sub(r":nth-child\([^)]+\)", "", normalized)
-        if cleaned and cleaned != normalized:
-            return cleaned.strip()
+    cleaned = _remove_nth_child(normalized)
+    if cleaned:
+        return cleaned
 
     return normalized
 
 
-def compress_min_path_with_anthropic(
-    explore: ExplorationResult, nl_request: str, schema: dict[str, Any]
-) -> ScrapePlan:
-    if not has_api_key():
-        return ScrapePlan(steps=explore.steps, notes="no_key: using explored steps")
+# --- Step Serialization ---
 
-    # Build a compact representation of the exploration
+
+def _step_to_dict(step: Any) -> dict[str, Any] | None:
+    """Convert a step to its dictionary representation."""
+    if isinstance(step, Navigate):
+        return {"type": "navigate", "url": step.url}
+    if isinstance(step, Click):
+        return {"type": "click", "selector": step.selector}
+    if isinstance(step, Fill):
+        return {"type": "fill", "selector": step.selector, "text": step.text}
+    if isinstance(step, WaitFor):
+        return {"type": "wait_for", "selector": step.selector, "state": step.state}
+    if isinstance(step, Validate):
+        return {
+            "type": "validate",
+            "selector": step.selector,
+            "validation_type": step.validation_type,
+            "is_critical": step.is_critical,
+            "description": step.description,
+        }
+    return None
+
+
+def _dict_to_step(s: dict[str, Any]) -> PlanStep | None:
+    """Convert a dictionary to a step object."""
+    t = s.get("type")
+    if t == "navigate" and s.get("url"):
+        return Navigate(url=str(s["url"]))
+    if t == "click" and s.get("selector"):
+        return Click(selector=str(s["selector"]))
+    if t == "fill" and s.get("selector"):
+        return Fill(selector=str(s["selector"]), text=str(s.get("text", "")))
+    if t in ("wait_for", "wait", "waitfor") and s.get("selector"):
+        return WaitFor(
+            selector=str(s["selector"]),
+            state=str(s.get("state", "visible")),
+        )
+    return None
+
+
+# --- LLM Compression ---
+
+
+def _build_steps_repr(steps: list[Any]) -> list[dict[str, Any]]:
+    """Build a compact representation of exploration steps."""
     steps_repr: list[dict[str, Any]] = []
-    from ..ir.model import Validate
+    for s in steps:
+        d = _step_to_dict(s)
+        if d:
+            steps_repr.append(d)
+    return steps_repr
 
-    for s in explore.steps:
-        if isinstance(s, Navigate):
-            steps_repr.append({"type": "navigate", "url": s.url})
-        elif isinstance(s, Click):
-            steps_repr.append({"type": "click", "selector": s.selector})
-        elif isinstance(s, Fill):
-            steps_repr.append({"type": "fill", "selector": s.selector, "text": s.text})
-        elif isinstance(s, WaitFor):
-            steps_repr.append({"type": "wait_for", "selector": s.selector, "state": s.state})
-        elif isinstance(s, Validate):
-            steps_repr.append(
-                {
-                    "type": "validate",
-                    "selector": s.selector,
-                    "validation_type": s.validation_type,
-                    "is_critical": s.is_critical,
-                    "description": s.description,
-                }
-            )
+
+def _build_compression_prompt(
+    nl_request: str, schema: dict[str, Any], explore: ExplorationResult
+) -> tuple[str, str]:
+    """Build system and user prompts for LLM compression."""
+    import json
 
     sys = (
         "Given an exploration trace (naive actions) and the goal, generate the shortest deterministic plan.\n"
@@ -170,8 +244,8 @@ def compress_min_path_with_anthropic(
         "Prefer direct navigation to discovered URLs when safe. Prefer resilient selectors.\n"
         "Output ONLY JSON with keys: steps[], notes.\n"
     )
-    import json
 
+    steps_repr = _build_steps_repr(explore.steps)
     user = (
         f"goal: {nl_request}\n"
         f"schema: {json.dumps(schema)}\n"
@@ -179,26 +253,33 @@ def compress_min_path_with_anthropic(
         f"trace: {json.dumps(steps_repr)}\n"
         'Return JSON: {"steps": [...], "notes": string}'
     )
+    return sys, user
+
+
+def _parse_compressed_steps(data: dict[str, Any]) -> list[PlanStep]:
+    """Parse LLM response into step objects."""
+    out_steps: list[PlanStep] = []
+    for s in data.get("steps", []) or []:
+        if not isinstance(s, dict):
+            continue
+        step = _dict_to_step(s)
+        if step:
+            out_steps.append(step)
+    return out_steps
+
+
+def compress_min_path_with_anthropic(
+    explore: ExplorationResult, nl_request: str, schema: dict[str, Any]
+) -> ScrapePlan:
+    """Use Claude to compress exploration trace into optimal path."""
+    if not has_api_key():
+        return ScrapePlan(steps=explore.steps, notes="no_key: using explored steps")
+
+    sys, user = _build_compression_prompt(nl_request, schema, explore)
+
     try:
         data, _ = complete_json(sys, user, max_tokens=600)
-        out_steps: list[PlanStep] = []
-        for s in data.get("steps", []) or []:
-            if not isinstance(s, dict):
-                continue
-            t = s.get("type")
-            if t == "navigate" and s.get("url"):
-                out_steps.append(Navigate(url=str(s["url"])))
-            elif t == "click" and s.get("selector"):
-                out_steps.append(Click(selector=str(s["selector"])))
-            elif t == "fill" and s.get("selector"):
-                out_steps.append(Fill(selector=str(s["selector"]), text=str(s.get("text", ""))))
-            elif t in ("wait_for", "wait", "waitfor") and s.get("selector"):
-                out_steps.append(
-                    WaitFor(
-                        selector=str(s["selector"]),
-                        state=str(s.get("state", "visible")),
-                    )
-                )
+        out_steps = _parse_compressed_steps(data)
         if out_steps:
             return ScrapePlan(steps=out_steps, notes=str(data.get("notes") or "compressed"))
     except Exception:  # noqa: S110 - fallback to unoptimized steps on failure

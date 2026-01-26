@@ -374,6 +374,125 @@ Decide next action (JSON only):"""
         return None
 
 
+async def _exec_navigate_action(
+    page: Page, action: dict[str, Any], actions: list[Any], urls: list[str], target_domain: str
+) -> bool:
+    """Execute navigate action. Returns True if navigation was successful."""
+    nav_url = action.get("url", "")
+    nav_domain = urlparse(nav_url).netloc.removeprefix("www.")
+    if target_domain not in nav_domain:
+        print(f"[Explorer] Skipping navigation to different domain: {nav_url}")
+        return False
+
+    await page.goto(nav_url, wait_until="domcontentloaded")
+    actions.append(Navigate(url=nav_url))
+    urls.append(nav_url)
+    return True
+
+
+async def _exec_click_action(page: Page, action: dict[str, Any], actions: list[Any]) -> None:
+    """Execute click action."""
+    selector = action.get("selector", "")
+    if selector:
+        await page.click(selector, timeout=5000)
+        actions.append(Click(selector=selector))
+        await page.wait_for_load_state("domcontentloaded", timeout=5000)
+
+
+async def _exec_fill_action(page: Page, action: dict[str, Any], actions: list[Any]) -> None:
+    """Execute fill action."""
+    selector = action.get("selector", "")
+    text = action.get("text", "")
+    if selector and text:
+        await page.fill(selector, text)
+        actions.append(Fill(selector=selector, text=text))
+
+
+async def _exec_select_action(page: Page, action: dict[str, Any], actions: list[Any]) -> None:
+    """Execute select action."""
+    selector = action.get("selector", "")
+    value = action.get("value", "")
+    if selector and value:
+        await page.select_option(selector, value)
+        actions.append(Select(selector=selector, value=value))
+
+
+async def _exec_hover_action(page: Page, action: dict[str, Any], actions: list[Any]) -> None:
+    """Execute hover action."""
+    selector = action.get("selector", "")
+    if selector:
+        await page.hover(selector, timeout=5000)
+        actions.append(Hover(selector=selector))
+        await page.wait_for_timeout(500)
+
+
+async def _exec_keypress_action(page: Page, action: dict[str, Any], actions: list[Any]) -> None:
+    """Execute keypress action."""
+    key = action.get("key", "")
+    selector = action.get("selector")
+    if key:
+        if selector:
+            await page.locator(selector).press(key)
+        else:
+            await page.keyboard.press(key)
+        actions.append(KeyPress(key=key, selector=selector))
+
+
+async def _execute_exploration_action(
+    page: Page,
+    action: dict[str, Any],
+    actions: list[Any],
+    urls: list[str],
+    target_domain: str,
+) -> str | None:
+    """Execute an exploration action. Returns 'break' to stop loop, 'continue' to skip."""
+    action_type = action.get("action", "")
+
+    if action_type == "navigate":
+        success = await _exec_navigate_action(page, action, actions, urls, target_domain)
+        if not success:
+            return "continue"
+    elif action_type == "click":
+        await _exec_click_action(page, action, actions)
+    elif action_type == "fill":
+        await _exec_fill_action(page, action, actions)
+    elif action_type == "select":
+        await _exec_select_action(page, action, actions)
+    elif action_type == "hover":
+        await _exec_hover_action(page, action, actions)
+    elif action_type == "keypress":
+        await _exec_keypress_action(page, action, actions)
+    elif action_type == "extract":
+        return "break"
+
+    return None
+
+
+async def _capture_exploration_state(
+    page: Page,
+    step: int,
+    job_id: str,
+    screenshots_dir: Path,
+    screenshots: list[Path],
+    urls: list[str],
+    html_pages: list[str],
+) -> None:
+    """Capture state after an exploration action."""
+    await page.wait_for_timeout(1000)
+
+    screenshot_path = screenshots_dir / f"exploration-step-{step}-{job_id}.png"
+    screenshot_bytes = await page.screenshot(full_page=True)
+    screenshot_path.write_bytes(screenshot_bytes)
+    screenshots.append(screenshot_path)
+
+    current_url = page.url
+    if current_url not in urls:
+        urls.append(current_url)
+
+    html_content = await page.content()
+    html_pages.append(html_content)
+
+
 async def _explore_with_complete_json(
     start_url: str,
     nl_request: str,
@@ -449,77 +568,21 @@ async def _explore_with_complete_json(
                     print(f"[Explorer] Agent decided to stop at step {step}")
                     break
 
-                action_type = action.get("action", "")
-                print(f"[Explorer] Action: {action_type}")
+                print(f"[Explorer] Action: {action.get('action', '')}")
 
                 try:
-                    if action_type == "navigate":
-                        nav_url = action.get("url", "")
-                        nav_domain = urlparse(nav_url).netloc.removeprefix("www.")
-                        if target_domain not in nav_domain:
-                            print(f"[Explorer] Skipping navigation to different domain: {nav_url}")
-                            continue
-
-                        await page.goto(nav_url, wait_until="domcontentloaded")
-                        actions.append(Navigate(url=nav_url))
-                        urls.append(nav_url)
-
-                    elif action_type == "click":
-                        selector = action.get("selector", "")
-                        if selector:
-                            await page.click(selector, timeout=5000)
-                            actions.append(Click(selector=selector))
-                            await page.wait_for_load_state("domcontentloaded", timeout=5000)
-
-                    elif action_type == "fill":
-                        selector = action.get("selector", "")
-                        text = action.get("text", "")
-                        if selector and text:
-                            await page.fill(selector, text)
-                            actions.append(Fill(selector=selector, text=text))
-
-                    elif action_type == "select":
-                        selector = action.get("selector", "")
-                        value = action.get("value", "")
-                        if selector and value:
-                            await page.select_option(selector, value)
-                            actions.append(Select(selector=selector, value=value))
-
-                    elif action_type == "hover":
-                        selector = action.get("selector", "")
-                        if selector:
-                            await page.hover(selector, timeout=5000)
-                            actions.append(Hover(selector=selector))
-                            await page.wait_for_timeout(500)
-
-                    elif action_type == "keypress":
-                        key = action.get("key", "")
-                        selector = action.get("selector")
-                        if key:
-                            if selector:
-                                await page.locator(selector).press(key)
-                            else:
-                                await page.keyboard.press(key)
-                            actions.append(KeyPress(key=key, selector=selector))
-
-                    elif action_type == "extract":
+                    result = await _execute_exploration_action(
+                        page, action, actions, urls, target_domain
+                    )
+                    if result == "break":
                         print(f"[Explorer] Extracting data at step {step}")
                         break
+                    if result == "continue":
+                        continue
 
-                    # Capture state after action
-                    await page.wait_for_timeout(1000)
-
-                    screenshot_path = screenshots_dir / f"exploration-step-{step}-{job_id}.png"
-                    screenshot_bytes = await page.screenshot(full_page=True)
-                    screenshot_path.write_bytes(screenshot_bytes)
-                    screenshots.append(screenshot_path)
-
-                    current_url = page.url
-                    if current_url not in urls:
-                        urls.append(current_url)
-
-                    html_content = await page.content()
-                    html_pages.append(html_content)
+                    await _capture_exploration_state(
+                        page, step, job_id, screenshots_dir, screenshots, urls, html_pages
+                    )
 
                 except Exception as e:
                     print(f"[Explorer] Action failed: {e}")
@@ -572,171 +635,251 @@ IMPORTANT WORKFLOW:
 Element references are stable identifiers from read_page output."""
 
 
+async def _action_navigate(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute navigate action."""
+    import base64
+
+    text = action_input.get("text")
+    if not text:
+        return {"output": "Error: URL required for navigate"}
+    url = text if text.startswith(("http://", "https://")) else f"https://{text}"
+    await page.goto(url, wait_until="domcontentloaded")
+    await page.wait_for_timeout(2000)
+    screenshot_bytes = await page.screenshot()
+    return {
+        "output": f"Navigated to {url}",
+        "base64_image": base64.b64encode(screenshot_bytes).decode(),
+    }
+
+
+async def _action_screenshot(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute screenshot action."""
+    import base64
+
+    screenshot_bytes = await page.screenshot()
+    return {
+        "output": "Screenshot captured",
+        "base64_image": base64.b64encode(screenshot_bytes).decode(),
+    }
+
+
+async def _action_read_page(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute read_page action."""
+    dom_tree, new_ref_map = await _generate_dom_tree(page)
+    ref_map.clear()
+    ref_map.update(new_ref_map)
+    return {"output": dom_tree if dom_tree else "Failed to read page"}
+
+
+async def _action_get_page_text(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute get_page_text action."""
+    text_content = await page.evaluate("() => document.body.innerText || ''")
+    title = await page.title()
+    return {"output": f"Title: {title}\n\n{text_content[:5000]}"}
+
+
+async def _action_left_click(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute left_click action."""
+    ref = action_input.get("ref")
+    coordinate = action_input.get("coordinate")
+    if ref and ref in ref_map:
+        await page.locator(f'[data-ref="{ref}"]').click(timeout=5000)
+        return {"output": f"Clicked element {ref}"}
+    if coordinate and len(coordinate) == 2:
+        await page.mouse.click(coordinate[0], coordinate[1])
+        return {"output": f"Clicked at ({coordinate[0]}, {coordinate[1]})"}
+    return {"output": "Error: ref or coordinate required for click"}
+
+
+async def _action_double_click(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute double_click action."""
+    ref = action_input.get("ref")
+    coordinate = action_input.get("coordinate")
+    if ref and ref in ref_map:
+        await page.locator(f'[data-ref="{ref}"]').dblclick(timeout=5000)
+        return {"output": f"Double-clicked element {ref}"}
+    if coordinate and len(coordinate) == 2:
+        await page.mouse.dblclick(coordinate[0], coordinate[1])
+        return {"output": f"Double-clicked at ({coordinate[0]}, {coordinate[1]})"}
+    return {"output": "Error: ref or coordinate required for double_click"}
+
+
+async def _action_hover(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute hover action."""
+    import base64
+
+    ref = action_input.get("ref")
+    coordinate = action_input.get("coordinate")
+    if ref and ref in ref_map:
+        await page.locator(f'[data-ref="{ref}"]').hover(timeout=5000)
+        await page.wait_for_timeout(500)
+        screenshot_bytes = await page.screenshot()
+        return {
+            "output": f"Hovered over element {ref}",
+            "base64_image": base64.b64encode(screenshot_bytes).decode(),
+        }
+    if coordinate and len(coordinate) == 2:
+        await page.mouse.move(coordinate[0], coordinate[1])
+        await page.wait_for_timeout(500)
+        screenshot_bytes = await page.screenshot()
+        return {
+            "output": f"Hovered at ({coordinate[0]}, {coordinate[1]})",
+            "base64_image": base64.b64encode(screenshot_bytes).decode(),
+        }
+    return {"output": "Error: ref or coordinate required for hover"}
+
+
+async def _action_type(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute type action."""
+    text = action_input.get("text")
+    if not text:
+        return {"output": "Error: text required for type action"}
+    await page.keyboard.type(text)
+    return {"output": f"Typed: {text}"}
+
+
+async def _action_key(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute key press action."""
+    text = action_input.get("text")
+    if not text:
+        return {"output": "Error: key required for key action"}
+    await page.keyboard.press(text)
+    return {"output": f"Pressed key: {text}"}
+
+
+def _compute_scroll_deltas(direction: str, amount: int) -> tuple[int, int]:
+    """Compute scroll deltas based on direction."""
+    delta_x = 0
+    delta_y = 0
+    if direction == "down":
+        delta_y = amount * 100
+    elif direction == "up":
+        delta_y = -amount * 100
+    elif direction == "right":
+        delta_x = amount * 100
+    elif direction == "left":
+        delta_x = -amount * 100
+    return delta_x, delta_y
+
+
+async def _action_scroll(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute scroll action."""
+    import base64
+
+    scroll_direction = action_input.get("scroll_direction") or "down"
+    scroll_amount = action_input.get("scroll_amount", 3)
+    delta_x, delta_y = _compute_scroll_deltas(scroll_direction, scroll_amount)
+    await page.evaluate(f"window.scrollBy({delta_x}, {delta_y})")
+    await page.wait_for_timeout(500)
+    screenshot_bytes = await page.screenshot()
+    return {
+        "output": f"Scrolled {scroll_direction} by {scroll_amount}",
+        "base64_image": base64.b64encode(screenshot_bytes).decode(),
+    }
+
+
+async def _action_scroll_to(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute scroll_to action."""
+    import base64
+
+    ref = action_input.get("ref")
+    if not ref:
+        return {"output": "Error: ref required for scroll_to"}
+    await page.locator(f'[data-ref="{ref}"]').scroll_into_view_if_needed()
+    await page.wait_for_timeout(500)
+    screenshot_bytes = await page.screenshot()
+    return {
+        "output": f"Scrolled to element {ref}",
+        "base64_image": base64.b64encode(screenshot_bytes).decode(),
+    }
+
+
+async def _action_wait(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute wait action."""
+    duration = action_input.get("duration", 1.0)
+    await page.wait_for_timeout(int(duration * 1000))
+    return {"output": f"Waited {duration} seconds"}
+
+
+async def _action_form_input(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute form_input action."""
+    ref = action_input.get("ref")
+    value = action_input.get("value")
+    if not ref or value is None:
+        return {"output": "Error: ref and value required for form_input"}
+    await page.locator(f'[data-ref="{ref}"]').fill(str(value))
+    return {"output": f"Filled {ref} with: {value}"}
+
+
+async def _action_execute_js(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute JavaScript action."""
+    text = action_input.get("text")
+    if not text:
+        return {"output": "Error: JavaScript code required"}
+    result = await page.evaluate(text)
+    return {"output": str(result) if result is not None else "undefined"}
+
+
+# Action dispatcher mapping
+_BROWSER_ACTIONS: dict[str, Any] = {
+    "navigate": _action_navigate,
+    "screenshot": _action_screenshot,
+    "read_page": _action_read_page,
+    "get_page_text": _action_get_page_text,
+    "left_click": _action_left_click,
+    "double_click": _action_double_click,
+    "hover": _action_hover,
+    "type": _action_type,
+    "key": _action_key,
+    "scroll": _action_scroll,
+    "scroll_to": _action_scroll_to,
+    "wait": _action_wait,
+    "form_input": _action_form_input,
+    "execute_js": _action_execute_js,
+}
+
+
 async def _execute_browser_action(
     page: Page,
     action_input: dict[str, Any],
     ref_map: dict[str, str],
 ) -> dict[str, Any]:
-    """Execute a browser tool action and return the result.
-
-    Args:
-        page: Playwright page object
-        action_input: The tool input containing action and parameters
-        ref_map: Map of ref_X identifiers to CSS selectors
-
-    Returns:
-        Tool result dict with output and optionally base64_image
-    """
-    import base64
-
+    """Execute a browser tool action and return the result."""
     action = action_input.get("action", "")
-    text = action_input.get("text")
-    ref = action_input.get("ref")
-    coordinate = action_input.get("coordinate")
-    scroll_direction = action_input.get("scroll_direction")
-    scroll_amount = action_input.get("scroll_amount", 3)
-    duration = action_input.get("duration", 1.0)
-    value = action_input.get("value")
 
     try:
-        if action == "navigate":
-            if not text:
-                return {"output": "Error: URL required for navigate"}
-            url = text if text.startswith(("http://", "https://")) else f"https://{text}"
-            await page.goto(url, wait_until="domcontentloaded")
-            await page.wait_for_timeout(2000)
-            screenshot_bytes = await page.screenshot()
-            return {
-                "output": f"Navigated to {url}",
-                "base64_image": base64.b64encode(screenshot_bytes).decode(),
-            }
-
-        elif action == "screenshot":
-            screenshot_bytes = await page.screenshot()
-            return {
-                "output": "Screenshot captured",
-                "base64_image": base64.b64encode(screenshot_bytes).decode(),
-            }
-
-        elif action == "read_page":
-            # Generate DOM tree with refs
-            dom_tree, new_ref_map = await _generate_dom_tree(page)
-            ref_map.clear()
-            ref_map.update(new_ref_map)
-            return {"output": dom_tree if dom_tree else "Failed to read page"}
-
-        elif action == "get_page_text":
-            text_content = await page.evaluate("() => document.body.innerText || ''")
-            title = await page.title()
-            return {"output": f"Title: {title}\n\n{text_content[:5000]}"}
-
-        elif action == "left_click":
-            if ref and ref in ref_map:
-                await page.locator(f'[data-ref="{ref}"]').click(timeout=5000)
-                return {"output": f"Clicked element {ref}"}
-            elif coordinate and len(coordinate) == 2:
-                await page.mouse.click(coordinate[0], coordinate[1])
-                return {"output": f"Clicked at ({coordinate[0]}, {coordinate[1]})"}
-            else:
-                return {"output": "Error: ref or coordinate required for click"}
-
-        elif action == "double_click":
-            if ref and ref in ref_map:
-                await page.locator(f'[data-ref="{ref}"]').dblclick(timeout=5000)
-                return {"output": f"Double-clicked element {ref}"}
-            elif coordinate and len(coordinate) == 2:
-                await page.mouse.dblclick(coordinate[0], coordinate[1])
-                return {"output": f"Double-clicked at ({coordinate[0]}, {coordinate[1]})"}
-            else:
-                return {"output": "Error: ref or coordinate required for double_click"}
-
-        elif action == "hover":
-            if ref and ref in ref_map:
-                await page.locator(f'[data-ref="{ref}"]').hover(timeout=5000)
-                await page.wait_for_timeout(500)
-                screenshot_bytes = await page.screenshot()
-                return {
-                    "output": f"Hovered over element {ref}",
-                    "base64_image": base64.b64encode(screenshot_bytes).decode(),
-                }
-            elif coordinate and len(coordinate) == 2:
-                await page.mouse.move(coordinate[0], coordinate[1])
-                await page.wait_for_timeout(500)
-                screenshot_bytes = await page.screenshot()
-                return {
-                    "output": f"Hovered at ({coordinate[0]}, {coordinate[1]})",
-                    "base64_image": base64.b64encode(screenshot_bytes).decode(),
-                }
-            else:
-                return {"output": "Error: ref or coordinate required for hover"}
-
-        elif action == "type":
-            if not text:
-                return {"output": "Error: text required for type action"}
-            await page.keyboard.type(text)
-            return {"output": f"Typed: {text}"}
-
-        elif action == "key":
-            if not text:
-                return {"output": "Error: key required for key action"}
-            await page.keyboard.press(text)
-            return {"output": f"Pressed key: {text}"}
-
-        elif action == "scroll":
-            if not scroll_direction:
-                scroll_direction = "down"
-            # Calculate scroll deltas based on direction
-            if scroll_direction == "down":
-                delta_y = scroll_amount * 100
-            elif scroll_direction == "up":
-                delta_y = -scroll_amount * 100
-            else:
-                delta_y = 0
-
-            if scroll_direction == "right":
-                delta_x = scroll_amount * 100
-            elif scroll_direction == "left":
-                delta_x = -scroll_amount * 100
-            else:
-                delta_x = 0
-            await page.evaluate(f"window.scrollBy({delta_x}, {delta_y})")
-            await page.wait_for_timeout(500)
-            screenshot_bytes = await page.screenshot()
-            return {
-                "output": f"Scrolled {scroll_direction} by {scroll_amount}",
-                "base64_image": base64.b64encode(screenshot_bytes).decode(),
-            }
-
-        elif action == "scroll_to":
-            if not ref:
-                return {"output": "Error: ref required for scroll_to"}
-            await page.locator(f'[data-ref="{ref}"]').scroll_into_view_if_needed()
-            await page.wait_for_timeout(500)
-            screenshot_bytes = await page.screenshot()
-            return {
-                "output": f"Scrolled to element {ref}",
-                "base64_image": base64.b64encode(screenshot_bytes).decode(),
-            }
-
-        elif action == "wait":
-            await page.wait_for_timeout(int(duration * 1000))
-            return {"output": f"Waited {duration} seconds"}
-
-        elif action == "form_input":
-            if not ref or value is None:
-                return {"output": "Error: ref and value required for form_input"}
-            await page.locator(f'[data-ref="{ref}"]').fill(str(value))
-            return {"output": f"Filled {ref} with: {value}"}
-
-        elif action == "execute_js":
-            if not text:
-                return {"output": "Error: JavaScript code required"}
-            result = await page.evaluate(text)
-            return {"output": str(result) if result is not None else "undefined"}
-
-        else:
-            return {"output": f"Unknown action: {action}"}
-
+        handler = _BROWSER_ACTIONS.get(action)
+        if handler:
+            return await handler(page, action_input, ref_map)
+        return {"output": f"Unknown action: {action}"}
     except Exception as e:
         return {"output": f"Error executing {action}: {e}"}
 

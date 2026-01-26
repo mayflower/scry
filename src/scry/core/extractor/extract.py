@@ -91,9 +91,7 @@ def _extract_generic_string(soup: BeautifulSoup, key: str) -> str | None:
     )
 
 
-def _extract_number(
-    soup: BeautifulSoup, key: str, prop_type: str
-) -> int | float | None:
+def _extract_number(soup: BeautifulSoup, key: str, prop_type: str) -> int | float | None:
     """Extract numeric fields and convert to int/float."""
     val = _first_text(
         soup,
@@ -236,9 +234,7 @@ def _matches_description_pattern(key_l: str) -> bool:
 # --- Main Dispatcher ---
 
 
-def _extract_string_field(
-    soup: BeautifulSoup, key: str, key_l: str
-) -> tuple[str | None, bool]:
+def _extract_string_field(soup: BeautifulSoup, key: str, key_l: str) -> tuple[str | None, bool]:
     """
     Extract a string field based on key pattern.
 

@@ -148,9 +148,7 @@ def _execute_with_self_healing(
 
                 if attempt + 1 < settings.max_repair_attempts:
                     last_stderr = (
-                        validation_error
-                        or script_result.stderr
-                        or "Validation checkpoint failed"
+                        validation_error or script_result.stderr or "Validation checkpoint failed"
                     )
                     patch = propose_patch(attempt + 1, last_stderr, None)
                     options = merge_codegen_options(options, patch)
@@ -179,9 +177,7 @@ def _execute_with_self_healing(
             options = merge_codegen_options(options, patch)
 
 
-def _load_extracted_data(
-    artifacts_root: Path, job_id: str, req: ScrapeRequest
-) -> dict[str, Any]:
+def _load_extracted_data(artifacts_root: Path, job_id: str, req: ScrapeRequest) -> dict[str, Any]:
     """Load extracted data from artifacts."""
     data_file = data_artifact_path(artifacts_root, job_id)
     if data_file.exists():
@@ -194,9 +190,7 @@ def _load_extracted_data(
     return _finalize_from_artifacts(job_id, req)
 
 
-def _check_schema_empty(
-    data: dict[str, Any], output_schema: dict[str, Any]
-) -> bool:
+def _check_schema_empty(data: dict[str, Any], output_schema: dict[str, Any]) -> bool:
     """Check if primary schema array fields are empty."""
     if not data or not output_schema:
         return False
@@ -311,9 +305,7 @@ async def run_job_with_id(
     )
 
     # Execute with self-healing
-    _execute_with_self_healing(
-        opt, job_id, artifacts_root, extraction_spec, execution_log
-    )
+    _execute_with_self_healing(opt, job_id, artifacts_root, extraction_spec, execution_log)
 
     # Extract final data
     execution_log.append("extracting")
