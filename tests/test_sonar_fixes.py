@@ -313,3 +313,229 @@ class TestWrapInTryExceptEdgeCases:
         )
         assert lines[0].startswith(indent)
         assert lines[0] == f"{indent}try:"
+
+
+class TestExtractorHelperFunctions:
+    """Tests for extractor helper functions added to reduce cognitive complexity."""
+
+    def test_extract_list_items_from_container(self):
+        """Should extract text from list items in a container."""
+        from bs4 import BeautifulSoup
+
+        from scry.core.extractor.extract import _extract_list_items_from_container
+
+        html = """
+        <ul class="items">
+            <li>Item 1</li>
+            <li>Item 2</li>
+            <li>Item 3</li>
+        </ul>
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        container = soup.find("ul")
+        result = _extract_list_items_from_container(container)
+        assert result == ["Item 1", "Item 2", "Item 3"]
+
+    def test_extract_list_items_empty_container(self):
+        """Should return empty list for container without items."""
+        from bs4 import BeautifulSoup
+
+        from scry.core.extractor.extract import _extract_list_items_from_container
+
+        html = "<ul class='empty'></ul>"
+        soup = BeautifulSoup(html, "html.parser")
+        container = soup.find("ul")
+        result = _extract_list_items_from_container(container)
+        assert result == []
+
+    def test_extract_text_from_class_matches(self):
+        """Should extract text from elements matching class pattern."""
+        from bs4 import BeautifulSoup
+
+        from scry.core.extractor.extract import _extract_text_from_class_matches
+
+        html = """
+        <div>
+            <span class="tag-item">Tag 1</span>
+            <span class="tag-item">Tag 2</span>
+            <span class="other">Other</span>
+        </div>
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        result = _extract_text_from_class_matches(soup, "tag")
+        assert "Tag 1" in result
+        assert "Tag 2" in result
+
+    def test_extract_text_from_class_matches_with_limit(self):
+        """Should respect limit parameter."""
+        from bs4 import BeautifulSoup
+
+        from scry.core.extractor.extract import _extract_text_from_class_matches
+
+        html = """
+        <div>
+            <span class="item">1</span>
+            <span class="item">2</span>
+            <span class="item">3</span>
+            <span class="item">4</span>
+            <span class="item">5</span>
+        </div>
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        result = _extract_text_from_class_matches(soup, "item", limit=3)
+        assert len(result) == 3
+
+    def test_is_feature_array(self):
+        """Should correctly identify feature arrays."""
+        from scry.core.extractor.extract import _is_feature_array
+
+        assert _is_feature_array("features", "string") is True
+        assert _is_feature_array("feature_list", "string") is True
+        assert _is_feature_array("features", "object") is False
+        assert _is_feature_array("tags", "string") is False
+
+    def test_is_tag_array(self):
+        """Should correctly identify tag arrays."""
+        from scry.core.extractor.extract import _is_tag_array
+
+        assert _is_tag_array("tags", "string") is True
+        assert _is_tag_array("tag_list", "string") is True
+        assert _is_tag_array("tags", "object") is False
+        assert _is_tag_array("features", "string") is False
+
+    def test_is_link_array(self):
+        """Should correctly identify link arrays."""
+        from scry.core.extractor.extract import _is_link_array
+
+        assert _is_link_array("links", "string") is True
+        assert _is_link_array("urls", "object") is True
+        assert _is_link_array("link_list", "string") is True
+        assert _is_link_array("images", "string") is False
+
+    def test_is_image_array(self):
+        """Should correctly identify image arrays."""
+        from scry.core.extractor.extract import _is_image_array
+
+        assert _is_image_array("images", "string") is True
+        assert _is_image_array("img_list", "string") is True
+        assert _is_image_array("images", "object") is False
+        assert _is_image_array("links", "string") is False
+
+    def test_result_or_none(self):
+        """Should return result if non-empty, None otherwise."""
+        from scry.core.extractor.extract import _result_or_none
+
+        assert _result_or_none([1, 2, 3]) == [1, 2, 3]
+        assert _result_or_none([]) is None
+        assert _result_or_none(["item"]) == ["item"]
+
+
+class TestRunnerHelperFunctions:
+    """Tests for runner helper functions added to reduce cognitive complexity."""
+
+    def test_handle_validation_failure_with_validation_error(self):
+        """Should extract validation error from stderr."""
+        from scry.core.executor.runner import _handle_validation_failure
+        from unittest.mock import MagicMock
+
+        script_result = MagicMock()
+        script_result.stderr = "Error: CRITICAL validation failed: element not found"
+        script_result.stdout = ""
+
+        result = _handle_validation_failure(script_result)
+        assert result == "Error: CRITICAL validation failed: element not found"
+
+    def test_handle_validation_failure_in_stdout(self):
+        """Should extract validation error from stdout if not in stderr."""
+        from scry.core.executor.runner import _handle_validation_failure
+        from unittest.mock import MagicMock
+
+        script_result = MagicMock()
+        script_result.stderr = ""
+        script_result.stdout = "CRITICAL validation failed: selector mismatch"
+
+        result = _handle_validation_failure(script_result)
+        assert result == "CRITICAL validation failed: selector mismatch"
+
+    def test_handle_validation_failure_no_error(self):
+        """Should return None if no validation error found."""
+        from scry.core.executor.runner import _handle_validation_failure
+        from unittest.mock import MagicMock
+
+        script_result = MagicMock()
+        script_result.stderr = "Some other error"
+        script_result.stdout = ""
+
+        result = _handle_validation_failure(script_result)
+        assert result is None
+
+    def test_should_retry_validation_within_attempts(self):
+        """Should return retry=True when within max attempts."""
+        from scry.core.executor.runner import _should_retry_validation
+        from unittest.mock import MagicMock, patch
+
+        script_result = MagicMock()
+        script_result.stderr = "CRITICAL validation failed: test"
+        script_result.stdout = ""
+        execution_log = []
+
+        with patch("scry.core.executor.runner.settings") as mock_settings:
+            mock_settings.max_repair_attempts = 3
+            should_retry, error_msg = _should_retry_validation(script_result, 0, execution_log)
+
+        assert should_retry is True
+        assert error_msg is not None
+        assert "validation_failed" in execution_log
+
+    def test_should_retry_validation_exhausted(self):
+        """Should return retry=False when attempts exhausted."""
+        from scry.core.executor.runner import _should_retry_validation
+        from unittest.mock import MagicMock, patch
+
+        script_result = MagicMock()
+        script_result.stderr = "CRITICAL validation failed: test"
+        script_result.stdout = ""
+        execution_log = []
+
+        with patch("scry.core.executor.runner.settings") as mock_settings:
+            mock_settings.max_repair_attempts = 2
+            should_retry, error_msg = _should_retry_validation(script_result, 1, execution_log)
+
+        assert should_retry is False
+        assert error_msg is None
+        assert "validation_repair_exhausted" in execution_log
+
+    def test_handle_script_error_within_attempts(self):
+        """Should return retry=True when within max attempts."""
+        from subprocess import CalledProcessError
+        from unittest.mock import patch
+
+        from scry.core.executor.runner import _handle_script_error
+
+        error = CalledProcessError(1, "python script.py", "", "Test error")
+        execution_log = []
+
+        with patch("scry.core.executor.runner.settings") as mock_settings:
+            mock_settings.max_repair_attempts = 3
+            should_retry, error_msg = _handle_script_error(error, 0, execution_log)
+
+        assert should_retry is True
+        assert error_msg == "Test error"
+
+    def test_handle_script_error_exhausted(self):
+        """Should return retry=False when attempts exhausted."""
+        from subprocess import CalledProcessError
+        from unittest.mock import patch
+
+        from scry.core.executor.runner import _handle_script_error
+
+        error = CalledProcessError(1, "python script.py", "", "Test error")
+        execution_log = []
+
+        with patch("scry.core.executor.runner.settings") as mock_settings:
+            mock_settings.max_repair_attempts = 2
+            should_retry, error_msg = _handle_script_error(error, 1, execution_log)
+
+        assert should_retry is False
+        assert error_msg is None
+        assert "script_failed" in execution_log
