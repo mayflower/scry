@@ -884,6 +884,211 @@ async def _execute_browser_action(
         return {"output": f"Error executing {action}: {e}"}
 
 
+def _build_task_description(nl_request: str, schema: dict[str, Any], start_url: str) -> str:
+    """Build the task description for the exploration agent."""
+    return f"""Task: {nl_request}
+
+Target schema for data extraction:
+{json.dumps(schema, indent=2)}
+
+Starting URL: {start_url}
+
+Instructions:
+1. Navigate to the starting URL
+2. Call read_page to understand the page structure
+3. Explore the site to accomplish the task
+4. If a cookie banner appears, dismiss it by finding and clicking the accept/dismiss button
+5. Extract data matching the schema when found
+
+When you're done or stuck, explain what you accomplished."""
+
+
+def _process_response_block(block: Any) -> tuple[dict[str, Any] | None, bool]:
+    """Process a single response block.
+
+    Returns:
+        Tuple of (content_dict, is_tool_use).
+    """
+    if not hasattr(block, "type"):
+        return None, False
+
+    if block.type == "text":
+        print(f"[Explorer] Claude: {block.text[:200]}")
+        return {"type": "text", "text": block.text}, False
+
+    if block.type == "tool_use":
+        return {
+            "type": "tool_use",
+            "id": block.id,
+            "name": block.name,
+            "input": block.input,
+        }, True
+
+    return None, False
+
+
+def _build_tool_result_content(result: dict[str, Any]) -> list[dict[str, Any]]:
+    """Build content array for tool result."""
+    content: list[dict[str, Any]] = []
+
+    if result.get("output"):
+        content.append({"type": "text", "text": result["output"]})
+
+    if result.get("base64_image"):
+        content.append({
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": result["base64_image"],
+            },
+        })
+
+    return content
+
+
+def _track_ir_action(
+    action_name: str, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> tuple[Any | None, str | None]:
+    """Convert browser action to IR step.
+
+    Returns:
+        Tuple of (ir_action, url_if_navigate).
+    """
+    if action_name == "navigate":
+        nav_url = action_input.get("text", "")
+        if nav_url:
+            if not nav_url.startswith(("http://", "https://")):
+                nav_url = f"https://{nav_url}"
+            return Navigate(url=nav_url), nav_url
+
+    if action_name == "left_click":
+        ref = action_input.get("ref")
+        if ref and ref in ref_map:
+            return Click(selector=f'[data-ref="{ref}"]'), None
+
+    if action_name == "form_input":
+        ref = action_input.get("ref")
+        value = action_input.get("value", "")
+        if ref and ref in ref_map:
+            return Fill(selector=f'[data-ref="{ref}"]', text=str(value)), None
+
+    return None, None
+
+
+def _save_screenshot(
+    result: dict[str, Any], screenshots_dir: Path, iteration: int, job_id: str
+) -> Path | None:
+    """Save screenshot from result if present."""
+    if not result.get("base64_image"):
+        return None
+
+    import base64 as b64
+
+    screenshot_path = screenshots_dir / f"exploration-step-{iteration}-{job_id}.png"
+    screenshot_path.write_bytes(b64.b64decode(result["base64_image"]))
+    return screenshot_path
+
+
+async def _process_tool_block(
+    block: Any,
+    page: Page,
+    ref_map: dict[str, str],
+    screenshots_dir: Path,
+    iteration: int,
+    job_id: str,
+    ir_actions: list[Any],
+    urls: list[str],
+    screenshots: list[Path],
+) -> dict[str, Any] | None:
+    """Process a single tool use block."""
+    if not hasattr(block, "type") or block.type != "tool_use":
+        return None
+    if block.name != "browser":
+        return None
+
+    action_input = block.input
+    action_name = action_input.get("action", "")
+    print(f"[Explorer] Executing: {action_name}")
+
+    result = await _execute_browser_action(page, action_input, ref_map)
+    content = _build_tool_result_content(result)
+
+    # Track IR action
+    ir_action, nav_url = _track_ir_action(action_name, action_input, ref_map)
+    if ir_action:
+        ir_actions.append(ir_action)
+    if nav_url:
+        urls.append(nav_url)
+
+    # Save screenshot
+    screenshot_path = _save_screenshot(result, screenshots_dir, iteration, job_id)
+    if screenshot_path:
+        screenshots.append(screenshot_path)
+
+    return {
+        "type": "tool_result",
+        "tool_use_id": block.id,
+        "content": content,
+    }
+
+
+async def _run_exploration_loop(
+    page: Page,
+    messages: list[dict[str, Any]],
+    max_steps: int,
+    ref_map: dict[str, str],
+    screenshots_dir: Path,
+    job_id: str,
+    ir_actions: list[Any],
+    urls: list[str],
+    screenshots: list[Path],
+) -> None:
+    """Run the main exploration loop."""
+    for iteration in range(max_steps):
+        print(f"[Explorer] Iteration {iteration + 1}/{max_steps}")
+
+        try:
+            response = call_with_browser_tool(
+                messages=messages,
+                max_tokens=4096,
+                system_prompt=BROWSER_TOOLS_SYSTEM_PROMPT,
+            )
+        except Exception as e:
+            print(f"[Explorer] API error: {e}")
+            break
+
+        # Process response blocks
+        assistant_content: list[dict[str, Any]] = []
+        has_tool_use = False
+
+        for block in response.content:
+            content_dict, is_tool = _process_response_block(block)
+            if content_dict:
+                assistant_content.append(content_dict)
+            if is_tool:
+                has_tool_use = True
+
+        messages.append({"role": "assistant", "content": assistant_content})
+
+        if not has_tool_use or response.stop_reason != "tool_use":
+            print("[Explorer] Agent finished")
+            break
+
+        # Execute tool actions
+        tool_results: list[dict[str, Any]] = []
+        for block in response.content:
+            result = await _process_tool_block(
+                block, page, ref_map, screenshots_dir, iteration, job_id,
+                ir_actions, urls, screenshots
+            )
+            if result:
+                tool_results.append(result)
+
+        if tool_results:
+            messages.append({"role": "user", "content": tool_results})
+
+
 async def _explore_with_browser_tools(
     start_url: str,
     nl_request: str,
@@ -913,8 +1118,7 @@ async def _explore_with_browser_tools(
     urls: list[str] = []
     html_pages: list[str] = []
     screenshots: list[Path] = []
-    data: dict[str, Any] = {}
-    ref_map: dict[str, str] = {}  # Track element references
+    ref_map: dict[str, str] = {}
 
     screenshots_dir.mkdir(parents=True, exist_ok=True)
     html_dir.mkdir(parents=True, exist_ok=True)
@@ -929,134 +1133,13 @@ async def _explore_with_browser_tools(
             page = await context.new_page()
             page.set_default_timeout(30000)
 
-            # Create task description
-            task_description = f"""Task: {nl_request}
-
-Target schema for data extraction:
-{json.dumps(schema, indent=2)}
-
-Starting URL: {start_url}
-
-Instructions:
-1. Navigate to the starting URL
-2. Call read_page to understand the page structure
-3. Explore the site to accomplish the task
-4. If a cookie banner appears, dismiss it by finding and clicking the accept/dismiss button
-5. Extract data matching the schema when found
-
-When you're done or stuck, explain what you accomplished."""
-
+            task_description = _build_task_description(nl_request, schema, start_url)
             messages: list[dict[str, Any]] = [{"role": "user", "content": task_description}]
 
-            for iteration in range(max_steps):
-                print(f"[Explorer] Iteration {iteration + 1}/{max_steps}")
-
-                try:
-                    response = call_with_browser_tool(
-                        messages=messages,
-                        max_tokens=4096,
-                        system_prompt=BROWSER_TOOLS_SYSTEM_PROMPT,
-                    )
-                except Exception as e:
-                    print(f"[Explorer] API error: {e}")
-                    break
-
-                # Process response
-                assistant_content: list[dict[str, Any]] = []
-                has_tool_use = False
-
-                for block in response.content:
-                    if hasattr(block, "type"):
-                        if block.type == "text":
-                            assistant_content.append({"type": "text", "text": block.text})
-                            print(f"[Explorer] Claude: {block.text[:200]}")
-                        elif block.type == "tool_use":
-                            has_tool_use = True
-                            assistant_content.append(
-                                {
-                                    "type": "tool_use",
-                                    "id": block.id,
-                                    "name": block.name,
-                                    "input": block.input,
-                                }
-                            )
-
-                messages.append({"role": "assistant", "content": assistant_content})
-
-                if not has_tool_use or response.stop_reason != "tool_use":
-                    print("[Explorer] Agent finished")
-                    break
-
-                # Execute tool actions
-                tool_results: list[dict[str, Any]] = []
-
-                for block in response.content:
-                    if not hasattr(block, "type") or block.type != "tool_use":
-                        continue
-
-                    if block.name != "browser":
-                        continue
-
-                    action_input = block.input
-                    action_name = action_input.get("action", "")
-                    print(f"[Explorer] Executing: {action_name}")
-
-                    result = await _execute_browser_action(page, action_input, ref_map)
-
-                    # Build tool result
-                    content: list[dict[str, Any]] = []
-                    if result.get("output"):
-                        content.append({"type": "text", "text": result["output"]})
-                    if result.get("base64_image"):
-                        content.append(
-                            {
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": "image/png",
-                                    "data": result["base64_image"],
-                                },
-                            }
-                        )
-
-                    tool_results.append(
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": content,
-                        }
-                    )
-
-                    # Track IR actions
-                    if action_name == "navigate":
-                        nav_url = action_input.get("text", "")
-                        if nav_url:
-                            if not nav_url.startswith(("http://", "https://")):
-                                nav_url = f"https://{nav_url}"
-                            urls.append(nav_url)
-                            ir_actions.append(Navigate(url=nav_url))
-                    elif action_name == "left_click":
-                        ref = action_input.get("ref")
-                        if ref and ref in ref_map:
-                            ir_actions.append(Click(selector=f'[data-ref="{ref}"]'))
-                    elif action_name == "form_input":
-                        ref = action_input.get("ref")
-                        value = action_input.get("value", "")
-                        if ref and ref in ref_map:
-                            ir_actions.append(Fill(selector=f'[data-ref="{ref}"]', text=str(value)))
-
-                    # Save screenshot if taken
-                    if result.get("base64_image"):
-                        screenshot_path = (
-                            screenshots_dir / f"exploration-step-{iteration}-{job_id}.png"
-                        )
-                        import base64 as b64
-
-                        screenshot_path.write_bytes(b64.b64decode(result["base64_image"]))
-                        screenshots.append(screenshot_path)
-
-                if tool_results:
-                    messages.append({"role": "user", "content": tool_results})
+            await _run_exploration_loop(
+                page, messages, max_steps, ref_map, screenshots_dir, job_id,
+                ir_actions, urls, screenshots
+            )
 
             # Capture final HTML - silent failure is ok, we have other HTML captures
             try:
@@ -1074,7 +1157,7 @@ When you're done or stuck, explain what you accomplished."""
         screenshots=screenshots,
         html_pages=html_pages,
         urls=urls if urls else [start_url],
-        data=data,
+        data={},
     )
 
 

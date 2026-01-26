@@ -117,28 +117,39 @@ def _extract_number(soup: BeautifulSoup, key: str, prop_type: str) -> int | floa
         return None
 
 
+def _extract_list_items_from_container(list_elem: Tag) -> list[str]:
+    """Extract text from list items within a container element."""
+    items: list[str] = []
+    for li in list_elem.find_all("li"):
+        text = li.get_text(strip=True)
+        if text:
+            items.append(text)
+    return items
+
+
+def _extract_text_from_class_matches(soup: BeautifulSoup, key: str, limit: int = 10) -> list[str]:
+    """Extract text from elements matching a class pattern."""
+    items: list[str] = []
+    for elem in soup.find_all(class_=re.compile(key)):
+        text = elem.get_text(strip=True)
+        if text:
+            items.append(text)
+            if len(items) >= limit:
+                break
+    return items
+
+
 def _extract_generic_array(soup: BeautifulSoup, key: str) -> list[str]:
     """Extract generic array of strings from lists or class-matched elements."""
-    arr_items: list[str] = []
-
     # Try ul/ol lists first
     list_elem = soup.find(class_=key) or soup.find(class_=f"{key}s")
     if isinstance(list_elem, Tag):
-        for li in list_elem.find_all("li"):
-            text = li.get_text(strip=True)
-            if text:
-                arr_items.append(text)
+        items = _extract_list_items_from_container(list_elem)
+        if items:
+            return items
 
     # Try spans/divs if no list items found
-    if not arr_items:
-        for elem in soup.find_all(class_=re.compile(key)):
-            text = elem.get_text(strip=True)
-            if text:
-                arr_items.append(text)
-                if len(arr_items) >= 10:
-                    break
-
-    return arr_items
+    return _extract_text_from_class_matches(soup, key)
 
 
 def _extract_features(soup: BeautifulSoup, key: str) -> list[str]:
@@ -262,6 +273,31 @@ def _extract_string_field(soup: BeautifulSoup, key: str, key_l: str) -> tuple[st
     return _extract_generic_string(soup, key), True
 
 
+def _is_feature_array(key_l: str, items_type: str | None) -> bool:
+    """Check if field is a features array."""
+    return "feature" in key_l and items_type == "string"
+
+
+def _is_tag_array(key_l: str, items_type: str | None) -> bool:
+    """Check if field is a tags array."""
+    return "tag" in key_l and items_type == "string"
+
+
+def _is_link_array(key_l: str, items_type: str | None) -> bool:
+    """Check if field is a links array."""
+    return ("link" in key_l or "url" in key_l) and items_type in ("string", "object")
+
+
+def _is_image_array(key_l: str, items_type: str | None) -> bool:
+    """Check if field is an images array."""
+    return ("image" in key_l or "img" in key_l) and items_type == "string"
+
+
+def _result_or_none(result: list[Any]) -> list[Any] | None:
+    """Return result if non-empty, otherwise None."""
+    return result if result else None
+
+
 def _extract_array_field(
     soup: BeautifulSoup,
     key: str,
@@ -278,30 +314,20 @@ def _extract_array_field(
     items = prop.get("items", {})
     items_type = items.get("type")
 
-    # Features array
-    if "feature" in key_l and items_type == "string":
-        result = _extract_features(soup, key)
-        return result if result else None, True
+    if _is_feature_array(key_l, items_type):
+        return _result_or_none(_extract_features(soup, key)), True
 
-    # Tags array
-    if "tag" in key_l and items_type == "string":
-        result = _extract_tags(soup, key)
-        return result if result else None, True
+    if _is_tag_array(key_l, items_type):
+        return _result_or_none(_extract_tags(soup, key)), True
 
-    # Links array
-    if ("link" in key_l or "url" in key_l) and items_type in ("string", "object"):
-        result = _extract_links(soup, key, base_url, items_type)
-        return result if result else None, True
+    if _is_link_array(key_l, items_type):
+        return _result_or_none(_extract_links(soup, key, base_url, items_type)), True
 
-    # Images array
-    if ("image" in key_l or "img" in key_l) and items_type == "string":
-        result = _extract_images(soup, key, base_url)
-        return result if result else None, True
+    if _is_image_array(key_l, items_type):
+        return _result_or_none(_extract_images(soup, key, base_url)), True
 
-    # Generic array (only for string items, excluding feature/tag)
     if items_type == "string":
-        result = _extract_generic_array(soup, key)
-        return result if result else None, True
+        return _result_or_none(_extract_generic_array(soup, key)), True
 
     return None, False
 

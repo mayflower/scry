@@ -38,6 +38,24 @@ async def health_check(request: Request) -> JSONResponse:  # noqa: ARG001
     return JSONResponse({"status": "healthy", "service": "scry-mcp"})
 
 
+def _build_login_params(username: str | None, password: str | None) -> dict[str, str] | None:
+    """Build login params dict if credentials are provided."""
+    if username and password:
+        return {"username": username, "password": password}
+    return None
+
+
+def _build_result_text_parts(result: Any) -> list[str]:
+    """Build text content parts from scrape result."""
+    parts = [
+        f"Browser task completed (job: {result.job_id}, status: {result.status})",
+        f"Execution: {' → '.join(result.execution_log)}",
+    ]
+    if result.data:
+        parts.append(f"\nExtracted data:\n```json\n{json.dumps(result.data, indent=2)}\n```")
+    return parts
+
+
 @mcp.tool
 async def browser(
     url: str,
@@ -76,17 +94,12 @@ async def browser(
     # Set MAX_EXPLORATION_STEPS env var for the runner
     os.environ["MAX_EXPLORATION_STEPS"] = str(max_steps)
 
-    # Build login params if credentials provided
-    login_params = None
-    if login_username and login_password:
-        login_params = {"username": login_username, "password": login_password}
-
     # Build the ScrapeRequest (using alias 'schema' for output_schema field)
     request = ScrapeRequest(
         nl_request=task,
         schema=output_schema,
         example=None,
-        login_params=login_params,
+        login_params=_build_login_params(login_username, login_password),
         parameters=None,
         target_urls=[url],
     )
@@ -173,17 +186,8 @@ async def browser(
     from fastmcp.tools.tool import ToolResult  # noqa: PLC0415
     from mcp.types import ImageContent, TextContent  # noqa: PLC0415
 
-    # Build text content with summary AND extracted data
-    # (structured_content may not be preserved through all transport layers)
-    text_parts = [
-        f"Browser task completed (job: {result.job_id}, status: {result.status})",
-        f"Execution: {' → '.join(result.execution_log)}",
-    ]
-
-    # Include extracted data in text content for reliable transport
-    if result.data:
-        text_parts.append(f"\nExtracted data:\n```json\n{json.dumps(result.data, indent=2)}\n```")
-
+    # Build content blocks for the response
+    text_parts = _build_result_text_parts(result)
     content_blocks: list[TextContent | ImageContent] = [
         TextContent(
             type="text",

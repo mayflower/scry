@@ -116,6 +116,43 @@ def _handle_validation_failure(
     return None
 
 
+def _should_retry_validation(
+    script_result: subprocess.CompletedProcess[str],
+    attempt: int,
+    execution_log: list[str],
+) -> tuple[bool, str | None]:
+    """Check if validation failure should trigger retry.
+
+    Returns:
+        Tuple of (should_retry, error_message).
+    """
+    execution_log.append("validation_failed")
+    validation_error = _handle_validation_failure(script_result)
+
+    if attempt + 1 < settings.max_repair_attempts:
+        error_msg = validation_error or script_result.stderr or "Validation checkpoint failed"
+        return True, error_msg
+
+    execution_log.append("validation_repair_exhausted")
+    return False, None
+
+
+def _handle_script_error(
+    error: subprocess.CalledProcessError,
+    attempt: int,
+    execution_log: list[str],
+) -> tuple[bool, str | None]:
+    """Handle script execution error and determine if retry is needed.
+
+    Returns:
+        Tuple of (should_retry, error_message).
+    """
+    if attempt + 1 >= settings.max_repair_attempts:
+        execution_log.append("script_failed")
+        return False, None
+    return True, error.stderr
+
+
 def _execute_with_self_healing(
     opt: ScrapePlan,
     job_id: str,
@@ -125,13 +162,9 @@ def _execute_with_self_healing(
 ) -> None:
     """Execute generated script with self-healing retry loop."""
     options: dict[str, Any] = {"extraction_spec": extraction_spec}
-    last_stderr = None
 
     for attempt in range(max(1, settings.max_repair_attempts)):
-        if attempt == 0:
-            execution_log.append("codegen")
-        else:
-            execution_log.append(f"repair_attempt_{attempt}")
+        execution_log.append("codegen" if attempt == 0 else f"repair_attempt_{attempt}")
 
         script_path = generate_script(
             opt, job_id, artifacts_root, settings.headless, options=options
@@ -143,17 +176,13 @@ def _execute_with_self_healing(
 
             # Handle validation failure (exit code 1)
             if script_result.returncode == 1:
-                execution_log.append("validation_failed")
-                validation_error = _handle_validation_failure(script_result)
-
-                if attempt + 1 < settings.max_repair_attempts:
-                    last_stderr = (
-                        validation_error or script_result.stderr or "Validation checkpoint failed"
-                    )
-                    patch = propose_patch(attempt + 1, last_stderr, None)
+                should_retry, error_msg = _should_retry_validation(
+                    script_result, attempt, execution_log
+                )
+                if should_retry and error_msg:
+                    patch = propose_patch(attempt + 1, error_msg, None)
                     options = merge_codegen_options(options, patch)
                     continue
-                execution_log.append("validation_repair_exhausted")
                 break
 
             # Handle other non-zero exit codes
@@ -169,12 +198,12 @@ def _execute_with_self_healing(
             break
 
         except subprocess.CalledProcessError as e:
-            last_stderr = e.stderr
-            if attempt + 1 >= settings.max_repair_attempts:
-                execution_log.append("script_failed")
+            should_retry, error_msg = _handle_script_error(e, attempt, execution_log)
+            if should_retry and error_msg:
+                patch = propose_patch(attempt + 1, error_msg, None)
+                options = merge_codegen_options(options, patch)
+            else:
                 break
-            patch = propose_patch(attempt + 1, last_stderr, None)
-            options = merge_codegen_options(options, patch)
 
 
 def _load_extracted_data(artifacts_root: Path, job_id: str, req: ScrapeRequest) -> dict[str, Any]:
