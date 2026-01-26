@@ -18,6 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import pytest
 import requests
 
 BASE_URL = os.getenv("SMARTR_BASE_URL", "http://127.0.0.1:8000")
@@ -245,6 +246,7 @@ def compare_results(exploration_data: dict[str, Any], script_data: dict[str, Any
     return False
 
 
+@pytest.mark.integration
 def test_airport_pipeline(airport_name: str, airport_info: dict[str, str]) -> dict[str, Any]:
     """Test complete pipeline for one airport."""
     result = {

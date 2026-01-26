@@ -26,6 +26,7 @@ BASE_URL = os.getenv("SMARTR_BASE_URL", "http://127.0.0.1:8000")
 TIMEOUT = int(os.getenv("SMARTR_TIMEOUT", "300"))
 
 
+@pytest.mark.integration
 class TestAirportExplorationToScript:
     """Test full pipeline from exploration to script generation and validation."""
 
