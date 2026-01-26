@@ -153,10 +153,8 @@ artifacts/
 .env.local
 .env.*.local
 
-# Claude AI configuration files (should not be in version control)
-CLAUDE.md
-AGENTS.md
-.claude/
+# Claude AI private configuration (not tracked)
+.claude/settings.local.json
 
 # Test artifacts
 /tmp/

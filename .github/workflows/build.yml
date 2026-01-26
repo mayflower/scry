@@ -1,25 +1,26 @@
-name: Build
+name: CI
 
 on:
   push:
     branches:
       - main
+  pull_request:
 
 jobs:
-  build:
-    name: Build and analyze
-    runs-on: mayflower-k8s-runners
+  # ============================================
+  # Quality Checks (Linting, Formatting, Types)
+  # ============================================
+  quality:
+    name: Quality Checks
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
 
-      # Python setup and coverage
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
@@ -28,20 +29,212 @@ jobs:
         run: |
           uv sync --extra dev
 
-      - name: Run tests with coverage
+      # Ruff linting with GitHub annotations and SARIF output for SonarQube
+      - name: Run ruff linting
         run: |
-          uv run pytest tests/ --cov=src/scry --cov-report=xml:${{ github.workspace }}/coverage.xml --cov-report=term -v -m "not integration" || true
-          ls -la ${{ github.workspace }}/coverage.xml || echo "Coverage file not generated"
+          uv run ruff check src/scry tests/ --output-format=github
+          uv run ruff check src/scry tests/ --output-format=sarif -o ruff-results.sarif || true
+
+      - name: Run ruff format check
+        run: |
+          uv run ruff format --check src/scry tests/
+
+      # Mypy with SARIF output for SonarQube
+      - name: Run mypy type checking
+        run: |
+          # Run mypy with JSON output and convert to SARIF
+          uv run mypy src/scry --output=json > mypy-output.json 2>&1 || true
+          python3 -c '
+          import json, sys
+          try:
+              with open("mypy-output.json") as f:
+                  lines = [json.loads(l) for l in f if l.strip()]
+          except:
+              lines = []
+          sarif = {
+              "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+              "version": "2.1.0",
+              "runs": [{
+                  "tool": {"driver": {"name": "mypy", "version": "1.19", "rules": []}},
+                  "results": []
+              }]
+          }
+          rules_map = {}
+          for item in lines:
+              if item.get("severity") not in ("error", "warning", "note"): continue
+              code = item.get("code", "unknown")
+              if code not in rules_map:
+                  rules_map[code] = len(sarif["runs"][0]["tool"]["driver"]["rules"])
+                  sarif["runs"][0]["tool"]["driver"]["rules"].append({
+                      "id": code, "name": code,
+                      "shortDescription": {"text": f"mypy {code}"}
+                  })
+              sarif["runs"][0]["results"].append({
+                  "ruleId": code, "ruleIndex": rules_map[code],
+                  "level": {"error": "error", "warning": "warning"}.get(item.get("severity"), "note"),
+                  "message": {"text": item.get("message", "")},
+                  "locations": [{
+                      "physicalLocation": {
+                          "artifactLocation": {"uri": item.get("file", "")},
+                          "region": {"startLine": item.get("line", 1), "startColumn": item.get("column", 1)}
+                      }
+                  }]
+              })
+          with open("mypy-results.sarif", "w") as f:
+              json.dump(sarif, f, indent=2)
+          print(f"Converted {len(lines)} mypy issues to SARIF")
+          '
+          # Also run with normal output for GitHub annotations
+          uv run mypy src/scry || true
+
+      # Bandit security scanner for Python
+      - name: Run Bandit security scan
+        run: |
+          uv run bandit -r src/scry -f json -o bandit-results.json || true
+          echo "Bandit scan complete"
+
+      - name: Upload Ruff SARIF
+        uses: actions/upload-artifact@v4
+        with:
+          name: ruff-sarif
+          path: ruff-results.sarif
+          retention-days: 7
+
+      - name: Upload Mypy SARIF
+        uses: actions/upload-artifact@v4
+        with:
+          name: mypy-sarif
+          path: mypy-results.sarif
+          retention-days: 7
+
+      - name: Upload Bandit results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-results
+          path: bandit-results.json
+          retention-days: 7
+
+  # ============================================
+  # Unit Tests with Coverage
+  # ============================================
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: |
+          uv sync --extra dev
+
+      # Run tests with JUnit XML and coverage XML output for SonarQube
+      - name: Run tests
+        run: |
+          uv run pytest tests/ -v -m "not integration" \
+            --cov=src/scry \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --junitxml=junit.xml
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            junit.xml
+            coverage.xml
+          retention-days: 7
+
+  # ============================================
+  # SonarQube Analysis
+  # ============================================
+  sonarqube:
+    name: SonarQube Analysis
+    runs-on: mayflower-k8s-runners
+    needs: [quality, test]
+    if: always()  # Run even if tests fail - we still want quality metrics
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download test results
+        uses: actions/download-artifact@v4
+        with:
+          name: test-results
+          path: .
         continue-on-error: true
 
-      # SonarQube scan
-      - uses: SonarSource/sonarqube-scan-action@v6
+      - name: Download Ruff SARIF
+        uses: actions/download-artifact@v4
+        with:
+          name: ruff-sarif
+          path: .
+        continue-on-error: true
+
+      - name: Download Mypy SARIF
+        uses: actions/download-artifact@v4
+        with:
+          name: mypy-sarif
+          path: .
+        continue-on-error: true
+
+      - name: Download Bandit results
+        uses: actions/download-artifact@v4
+        with:
+          name: bandit-results
+          path: .
+        continue-on-error: true
+
+      # Debug: Verify downloaded files
+      - name: Debug downloaded files
+        run: |
+          echo "=== Files in current directory ==="
+          ls -la *.sarif *.json *.xml 2>/dev/null || echo "No report files found"
+
+      # Build dynamic SARIF paths (only include files that exist)
+      - name: Prepare SARIF paths
+        id: sarif
+        run: |
+          SARIF_FILES=""
+          for f in ruff-results.sarif mypy-results.sarif; do
+            if [ -f "$f" ]; then
+              if [ -n "$SARIF_FILES" ]; then
+                SARIF_FILES="$SARIF_FILES,$f"
+              else
+                SARIF_FILES="$f"
+              fi
+            fi
+          done
+          echo "paths=$SARIF_FILES" >> $GITHUB_OUTPUT
+          echo "Found SARIF files: $SARIF_FILES"
+
+      # Prepare external analyzer paths
+      - name: Prepare external analyzer paths
+        id: external
+        run: |
+          BANDIT_PATH=""
+          [ -f "bandit-results.json" ] && BANDIT_PATH="bandit-results.json"
+          echo "bandit=$BANDIT_PATH" >> $GITHUB_OUTPUT
+          echo "Bandit: $BANDIT_PATH"
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v6
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-
-      # Uncomment to fail on Quality Gate red
-      # - uses: SonarSource/sonarqube-quality-gate-action@v1
-      #   timeout-minutes: 5
-      #   env:
-      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.projectVersion=${{ github.sha }}
+            -Dsonar.sarifReportPaths=${{ steps.sarif.outputs.paths }}
+            -Dsonar.python.bandit.reportPaths=${{ steps.external.outputs.bandit }}

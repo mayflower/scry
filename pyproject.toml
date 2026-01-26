@@ -31,6 +31,9 @@ dev = [
   "pytest>=8.0.0",
   "pytest-asyncio>=0.23.0",
   "pytest-cov>=4.0.0",
+  "mypy>=1.19.1",
+  "ruff>=0.14.14",
+  "bandit>=1.9.3",
 ]
 
 [project.scripts]
@@ -39,3 +42,93 @@ scry-mcp = "scry.mcp_server:main"
 
 [tool.uvicorn]
 factory = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+# SonarQube-compatible output (junit.xml and coverage.xml)
+# Usage: pytest --junitxml=junit.xml --cov=src/scry --cov-report=xml
+addopts = "--junitxml=junit.xml"
+markers = [
+    "integration: marks tests that require external services",
+]
+
+[tool.coverage.run]
+# Use relative paths in coverage.xml for SonarQube compatibility
+relative_files = true
+source = ["src"]
+
+[tool.coverage.xml]
+output = "coverage.xml"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "TCH",  # flake8-type-checking
+    "S",    # flake8-bandit (security) - for SARIF/SonarQube
+]
+
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B008",   # do not perform function calls in argument defaults
+    "B904",   # raise from inside except without explicit exception chaining
+    "SIM105", # use contextlib.suppress
+    "SIM108", # use ternary operator instead of if-else
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "S101",   # assert in tests is expected
+    "S311",   # pseudo-random generator ok in tests
+]
+"**/test_*.py" = [
+    "S101",   # assert in tests is expected
+    "S311",   # pseudo-random generator ok in tests
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = false
+warn_return_any = false
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+no_implicit_optional = true
+check_untyped_defs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+# Ignore errors for external dependencies without stubs
+[[tool.mypy.overrides]]
+module = [
+    "playwright.*",
+    "bs4.*",
+    "redis.*",
+    "anthropic.*",
+    "fastmcp.*",
+    "PIL.*",
+    "opentelemetry.*",
+]
+ignore_missing_imports = true
+
+# Relax type checking in tests
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+check_untyped_defs = false
+ignore_errors = true
