@@ -435,8 +435,9 @@ class TestRunnerHelperFunctions:
 
     def test_handle_validation_failure_with_validation_error(self):
         """Should extract validation error from stderr."""
-        from scry.core.executor.runner import _handle_validation_failure
         from unittest.mock import MagicMock
+
+        from scry.core.executor.runner import _handle_validation_failure
 
         script_result = MagicMock()
         script_result.stderr = "Error: CRITICAL validation failed: element not found"
@@ -447,8 +448,9 @@ class TestRunnerHelperFunctions:
 
     def test_handle_validation_failure_in_stdout(self):
         """Should extract validation error from stdout if not in stderr."""
-        from scry.core.executor.runner import _handle_validation_failure
         from unittest.mock import MagicMock
+
+        from scry.core.executor.runner import _handle_validation_failure
 
         script_result = MagicMock()
         script_result.stderr = ""
@@ -459,8 +461,9 @@ class TestRunnerHelperFunctions:
 
     def test_handle_validation_failure_no_error(self):
         """Should return None if no validation error found."""
-        from scry.core.executor.runner import _handle_validation_failure
         from unittest.mock import MagicMock
+
+        from scry.core.executor.runner import _handle_validation_failure
 
         script_result = MagicMock()
         script_result.stderr = "Some other error"
@@ -471,8 +474,9 @@ class TestRunnerHelperFunctions:
 
     def test_should_retry_validation_within_attempts(self):
         """Should return retry=True when within max attempts."""
-        from scry.core.executor.runner import _should_retry_validation
         from unittest.mock import MagicMock, patch
+
+        from scry.core.executor.runner import _should_retry_validation
 
         script_result = MagicMock()
         script_result.stderr = "CRITICAL validation failed: test"
@@ -489,8 +493,9 @@ class TestRunnerHelperFunctions:
 
     def test_should_retry_validation_exhausted(self):
         """Should return retry=False when attempts exhausted."""
-        from scry.core.executor.runner import _should_retry_validation
         from unittest.mock import MagicMock, patch
+
+        from scry.core.executor.runner import _should_retry_validation
 
         script_result = MagicMock()
         script_result.stderr = "CRITICAL validation failed: test"
