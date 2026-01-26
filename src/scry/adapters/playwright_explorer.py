@@ -935,14 +935,16 @@ def _build_tool_result_content(result: dict[str, Any]) -> list[dict[str, Any]]:
         content.append({"type": "text", "text": result["output"]})
 
     if result.get("base64_image"):
-        content.append({
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": "image/png",
-                "data": result["base64_image"],
-            },
-        })
+        content.append(
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/png",
+                    "data": result["base64_image"],
+                },
+            }
+        )
 
     return content
 
@@ -1079,8 +1081,15 @@ async def _run_exploration_loop(
         tool_results: list[dict[str, Any]] = []
         for block in response.content:
             result = await _process_tool_block(
-                block, page, ref_map, screenshots_dir, iteration, job_id,
-                ir_actions, urls, screenshots
+                block,
+                page,
+                ref_map,
+                screenshots_dir,
+                iteration,
+                job_id,
+                ir_actions,
+                urls,
+                screenshots,
             )
             if result:
                 tool_results.append(result)
@@ -1137,8 +1146,15 @@ async def _explore_with_browser_tools(
             messages: list[dict[str, Any]] = [{"role": "user", "content": task_description}]
 
             await _run_exploration_loop(
-                page, messages, max_steps, ref_map, screenshots_dir, job_id,
-                ir_actions, urls, screenshots
+                page,
+                messages,
+                max_steps,
+                ref_map,
+                screenshots_dir,
+                job_id,
+                ir_actions,
+                urls,
+                screenshots,
             )
 
             # Capture final HTML - silent failure is ok, we have other HTML captures
