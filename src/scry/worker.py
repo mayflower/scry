@@ -24,8 +24,7 @@ def _worker_loop() -> None:
             else:
                 result = asyncio.run(run_job(req))
             bus.set_result(result.job_id, json.loads(result.model_dump_json()))
-        except Exception:
-            # Swallow and continue (no logs per constraints)
+        except Exception:  # noqa: S112 - worker must continue processing queue
             continue
 
 

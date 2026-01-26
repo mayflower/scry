@@ -35,6 +35,6 @@ def synthesize_selectors(
         data, _ = complete_json(sys, user, max_tokens=800)
         if isinstance(data, dict):
             return data
-    except Exception:
+    except Exception:  # noqa: S110 - return empty dict on LLM failure
         pass
     return {}

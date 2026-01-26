@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from scry.api.dto import ScrapeRequest
 from scry.config.settings import settings
 from scry.core.executor.runner import run_job, run_job_with_id
@@ -138,9 +139,7 @@ class TestUnifiedImplementation:
         assert "executing_script" in res.execution_log
 
         # Check that generated code artifact exists
-        code_path = (
-            Path(settings.artifacts_root) / "generated_code" / f"{res.job_id}.py"
-        )
+        code_path = Path(settings.artifacts_root) / "generated_code" / f"{res.job_id}.py"
         assert code_path.exists(), f"Generated code not found at {code_path}"
 
         # Verify the generated code is valid Python
@@ -225,9 +224,7 @@ class TestUnifiedImplementation:
             assert entry in res.execution_log, f"Missing log entry: {entry}"
 
         # Should have either optimizing or path_compressed
-        assert (
-            "optimizing" in res.execution_log or "path_compressed" in res.execution_log
-        )
+        assert "optimizing" in res.execution_log or "path_compressed" in res.execution_log
 
     @pytest.mark.integration
     def test_schema_validation(self):

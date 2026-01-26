@@ -3,14 +3,13 @@
 import os
 
 import pytest
+
 from scry.api.dto import ScrapeRequest
 from scry.core.executor.runner import run_job_with_id
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY"
-)
+@pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY")
 async def test_native_explorer_minimal_integration():
     """Minimal test: Does the pipeline actually work with native explorer?
 

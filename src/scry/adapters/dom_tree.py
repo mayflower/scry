@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
@@ -68,7 +67,7 @@ class DOMTreeGenerator:
             YAML-like tree structure with element references
         """
         # Get accessibility snapshot from Playwright
-        snapshot = self.page.accessibility.snapshot()
+        snapshot = self.page.accessibility.snapshot()  # type: ignore[attr-defined]
 
         if not snapshot:
             return "No accessibility tree available"
@@ -114,12 +113,11 @@ class DOMTreeGenerator:
             return
 
         # Filter: only interactive elements
-        if filter_type == "interactive":
-            if role not in self.INTERACTIVE_ROLES:
-                # Not interactive, but check children
-                for child in node.get("children", []):
-                    self._traverse_node(child, indent, lines, filter_type, max_depth)
-                return
+        if filter_type == "interactive" and role not in self.INTERACTIVE_ROLES:
+            # Not interactive, but check children
+            for child in node.get("children", []):
+                self._traverse_node(child, indent, lines, filter_type, max_depth)
+            return
 
         # Build selector for this element (fallback for element recovery)
         selector = self._build_selector(node)

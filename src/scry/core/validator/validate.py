@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 try:
-    import jsonschema
+    import jsonschema  # type: ignore[import-untyped]
 except Exception:  # pragma: no cover
-    jsonschema = None  # type: ignore
+    jsonschema = None  # type: ignore[assignment]
 
 
 def _prune_object(schema: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
@@ -19,9 +19,7 @@ def _prune_object(schema: dict[str, Any], data: dict[str, Any]) -> dict[str, Any
     return out
 
 
-def normalize_against_schema(
-    schema: dict[str, Any], data: dict[str, Any]
-) -> dict[str, Any]:
+def normalize_against_schema(schema: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
     st = schema.get("type")
     if st == "object" and isinstance(data, dict):
         data = _prune_object(schema, data)
@@ -29,7 +27,6 @@ def normalize_against_schema(
     if jsonschema is not None:
         try:
             jsonschema.validate(instance=data, schema=schema)
-        except Exception:
-            # Keep best-effort data even if it doesn't fully validate
+        except Exception:  # noqa: S110 - keep best-effort data even if it doesn't validate
             pass
     return data

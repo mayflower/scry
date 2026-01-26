@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import time
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
@@ -35,6 +34,8 @@ from .anthropic import (
 )
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from playwright.async_api import Browser
 
 # Confidence threshold for cookie banner dismissal
@@ -204,9 +205,7 @@ async def _handle_cookie_banner(page: Page) -> CookieBannerResult | None:
             return result
 
         if result.confidence < COOKIE_CONFIDENCE_THRESHOLD:
-            print(
-                f"[Explorer] Banner detected but confidence too low: {result.confidence}"
-            )
+            print(f"[Explorer] Banner detected but confidence too low: {result.confidence}")
             return result
 
         print(
@@ -218,12 +217,8 @@ async def _handle_cookie_banner(page: Page) -> CookieBannerResult | None:
             selector = ref_map.get(result.dismiss_ref)
             if selector:
                 try:
-                    print(
-                        f"[Explorer] Dismissing banner via {result.dismiss_ref} -> {selector}"
-                    )
-                    await page.locator(f'[data-ref="{result.dismiss_ref}"]').click(
-                        timeout=3000
-                    )
+                    print(f"[Explorer] Dismissing banner via {result.dismiss_ref} -> {selector}")
+                    await page.locator(f'[data-ref="{result.dismiss_ref}"]').click(timeout=3000)
                     print("[Explorer] Cookie banner dismissed")
                     await page.wait_for_timeout(1000)
                 except Exception as e:
@@ -299,9 +294,7 @@ async def _get_page_state(page: Page) -> dict[str, Any]:
             return elements;
         }""")
 
-        text = await page.evaluate(
-            "() => document.body.innerText?.substring(0, 2000) || ''"
-        )
+        text = await page.evaluate("() => document.body.innerText?.substring(0, 2000) || ''")
 
         return {
             "title": title,
@@ -417,9 +410,7 @@ async def _explore_with_complete_json(
             page = await context.new_page()
             page.set_default_timeout(30000)
 
-            print(
-                f"[Explorer] Browser ready in {time.perf_counter() - start_time:.2f}s"
-            )
+            print(f"[Explorer] Browser ready in {time.perf_counter() - start_time:.2f}s")
 
             # Navigate to start URL
             print(f"[Explorer] Navigating to {start_url}")
@@ -466,9 +457,7 @@ async def _explore_with_complete_json(
                         nav_url = action.get("url", "")
                         nav_domain = urlparse(nav_url).netloc.removeprefix("www.")
                         if target_domain not in nav_domain:
-                            print(
-                                f"[Explorer] Skipping navigation to different domain: {nav_url}"
-                            )
+                            print(f"[Explorer] Skipping navigation to different domain: {nav_url}")
                             continue
 
                         await page.goto(nav_url, wait_until="domcontentloaded")
@@ -480,9 +469,7 @@ async def _explore_with_complete_json(
                         if selector:
                             await page.click(selector, timeout=5000)
                             actions.append(Click(selector=selector))
-                            await page.wait_for_load_state(
-                                "domcontentloaded", timeout=5000
-                            )
+                            await page.wait_for_load_state("domcontentloaded", timeout=5000)
 
                     elif action_type == "fill":
                         selector = action.get("selector", "")
@@ -522,9 +509,7 @@ async def _explore_with_complete_json(
                     # Capture state after action
                     await page.wait_for_timeout(1000)
 
-                    screenshot_path = (
-                        screenshots_dir / f"exploration-step-{step}-{job_id}.png"
-                    )
+                    screenshot_path = screenshots_dir / f"exploration-step-{step}-{job_id}.png"
                     screenshot_bytes = await page.screenshot(full_page=True)
                     screenshot_path.write_bytes(screenshot_bytes)
                     screenshots.append(screenshot_path)
@@ -617,9 +602,7 @@ async def _execute_browser_action(
         if action == "navigate":
             if not text:
                 return {"output": "Error: URL required for navigate"}
-            url = (
-                text if text.startswith(("http://", "https://")) else f"https://{text}"
-            )
+            url = text if text.startswith(("http://", "https://")) else f"https://{text}"
             await page.goto(url, wait_until="domcontentloaded")
             await page.wait_for_timeout(2000)
             screenshot_bytes = await page.screenshot()
@@ -663,9 +646,7 @@ async def _execute_browser_action(
                 return {"output": f"Double-clicked element {ref}"}
             elif coordinate and len(coordinate) == 2:
                 await page.mouse.dblclick(coordinate[0], coordinate[1])
-                return {
-                    "output": f"Double-clicked at ({coordinate[0]}, {coordinate[1]})"
-                }
+                return {"output": f"Double-clicked at ({coordinate[0]}, {coordinate[1]})"}
             else:
                 return {"output": "Error: ref or coordinate required for double_click"}
 
@@ -818,9 +799,7 @@ Instructions:
 
 When you're done or stuck, explain what you accomplished."""
 
-            messages: list[dict[str, Any]] = [
-                {"role": "user", "content": task_description}
-            ]
+            messages: list[dict[str, Any]] = [{"role": "user", "content": task_description}]
 
             for iteration in range(max_steps):
                 print(f"[Explorer] Iteration {iteration + 1}/{max_steps}")
@@ -842,9 +821,7 @@ When you're done or stuck, explain what you accomplished."""
                 for block in response.content:
                     if hasattr(block, "type"):
                         if block.type == "text":
-                            assistant_content.append(
-                                {"type": "text", "text": block.text}
-                            )
+                            assistant_content.append({"type": "text", "text": block.text})
                             print(f"[Explorer] Claude: {block.text[:200]}")
                         elif block.type == "tool_use":
                             has_tool_use = True
@@ -919,30 +896,25 @@ When you're done or stuck, explain what you accomplished."""
                         ref = action_input.get("ref")
                         value = action_input.get("value", "")
                         if ref and ref in ref_map:
-                            ir_actions.append(
-                                Fill(selector=f'[data-ref="{ref}"]', text=str(value))
-                            )
+                            ir_actions.append(Fill(selector=f'[data-ref="{ref}"]', text=str(value)))
 
                     # Save screenshot if taken
                     if result.get("base64_image"):
                         screenshot_path = (
-                            screenshots_dir
-                            / f"exploration-step-{iteration}-{job_id}.png"
+                            screenshots_dir / f"exploration-step-{iteration}-{job_id}.png"
                         )
                         import base64 as b64
 
-                        screenshot_path.write_bytes(
-                            b64.b64decode(result["base64_image"])
-                        )
+                        screenshot_path.write_bytes(b64.b64decode(result["base64_image"]))
                         screenshots.append(screenshot_path)
 
                 if tool_results:
                     messages.append({"role": "user", "content": tool_results})
 
-            # Capture final HTML
+            # Capture final HTML - silent failure is ok, we have other HTML captures
             try:
                 html_pages.append(await page.content())
-            except Exception:
+            except Exception:  # noqa: S110
                 pass
 
             print(f"[Explorer] Completed with {len(ir_actions)} IR actions")

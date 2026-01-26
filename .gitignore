@@ -195,3 +195,4 @@ smartscraper/
 # uv (not used for package management)
 uv.lock
 .venv/
+bandit-results.json

@@ -15,17 +15,19 @@ import json
 import logging
 import os
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastmcp import Context, FastMCP
-
-# Configure logging to show INFO level (required for telemetry messages)
-logging.basicConfig(level=logging.INFO)
-from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from .api.dto import ScrapeRequest
 from .core.executor.runner import run_job_with_id
+
+if TYPE_CHECKING:
+    from starlette.requests import Request
+
+# Configure logging to show INFO level (required for telemetry messages)
+logging.basicConfig(level=logging.INFO)
 
 mcp = FastMCP(name="scry-browser")
 
@@ -79,16 +81,18 @@ async def browser(
     if login_username and login_password:
         login_params = {"username": login_username, "password": login_password}
 
-    # Build the ScrapeRequest
+    # Build the ScrapeRequest (using alias 'schema' for output_schema field)
     request = ScrapeRequest(
         nl_request=task,
-        output_schema=output_schema,
-        target_urls=[url],
+        schema=output_schema,
+        example=None,
         login_params=login_params,
+        parameters=None,
+        target_urls=[url],
     )
 
     # Track progress steps and latest screenshot for the callback
-    callback_state = {"step": -1, "last_screenshot_b64": None}
+    callback_state: dict[str, int | str | None] = {"step": -1, "last_screenshot_b64": None}
 
     def progress_callback(data: dict[str, Any]) -> None:
         """Sync callback that schedules async progress reporting and captures screenshots.
@@ -108,9 +112,7 @@ async def browser(
         )
         if screenshot:
             callback_state["last_screenshot_b64"] = screenshot
-            print(
-                f"[MCP] Screenshot captured in callback_state: {len(screenshot)} bytes"
-            )
+            print(f"[MCP] Screenshot captured in callback_state: {len(screenshot)} bytes")
 
         # Avoid duplicate progress reports
         if step <= callback_state["step"]:
@@ -164,9 +166,8 @@ async def browser(
     )
 
     final_screenshot = callback_state["last_screenshot_b64"]
-    print(
-        f"[MCP] Returning result with screenshot: {bool(final_screenshot)}, len={len(final_screenshot) if final_screenshot else 0}"
-    )
+    screenshot_len = len(str(final_screenshot)) if final_screenshot else 0
+    print(f"[MCP] Returning result with screenshot: {bool(final_screenshot)}, len={screenshot_len}")
 
     # Import here to avoid linter removing "unused" imports at module level
     from fastmcp.tools.tool import ToolResult  # noqa: PLC0415
@@ -195,7 +196,7 @@ async def browser(
         content_blocks.append(
             ImageContent(
                 type="image",
-                data=final_screenshot,
+                data=str(final_screenshot),
                 mimeType="image/png",
             )
         )

@@ -15,6 +15,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from scry.api.dto import ScrapeRequest
 from scry.core.codegen.generator import generate_script
 from scry.core.executor.runner import run_job_with_id
@@ -65,9 +66,7 @@ class TestValidateIRModel:
         """Test different validation types."""
         presence = Validate(selector="#header", validation_type="presence")
         absence = Validate(selector=".error", validation_type="absence")
-        text = Validate(
-            selector=".title", validation_type="text", expected_text="Welcome"
-        )
+        text = Validate(selector=".title", validation_type="text", expected_text="Welcome")
         count = Validate(selector=".item", validation_type="count", expected_count=10)
 
         assert presence.validation_type == "presence"
@@ -147,21 +146,15 @@ class TestValidationInBrowserUse:
 
         # Check that validations were added
         validate_steps = [s for s in steps if isinstance(s, Validate)]
-        assert (
-            len(validate_steps) == 2
-        ), f"Expected 2 validations, got {len(validate_steps)}"
+        assert len(validate_steps) == 2, f"Expected 2 validations, got {len(validate_steps)}"
 
         # Check navigation validation
-        nav_validations = [
-            v for v in validate_steps if "page loaded" in v.description.lower()
-        ]
+        nav_validations = [v for v in validate_steps if "page loaded" in v.description.lower()]
         assert len(nav_validations) == 1, "Should have one navigation validation"
         assert nav_validations[0].is_critical is True
 
         # Check click validation
-        click_validations = [
-            v for v in validate_steps if "after click" in v.description.lower()
-        ]
+        click_validations = [v for v in validate_steps if "after click" in v.description.lower()]
         assert len(click_validations) == 1, "Should have one click validation"
         assert click_validations[0].is_critical is False
 
@@ -171,9 +164,7 @@ class TestValidationInBrowserUse:
             Navigate(url="https://example.com"),
             Click(selector="button"),
             Navigate(url="https://example.com/page2"),
-            Click(
-                selector="button2"
-            ),  # Add another action so second Navigate isn't last
+            Click(selector="button2"),  # Add another action so second Navigate isn't last
         ]
 
         # Simulate what native_explorer.py does
@@ -493,9 +484,7 @@ class TestValidationInRunner:
             assert mock_run.call_count == 2
 
             # Should have repair attempt in log
-            repair_logs = [
-                log for log in result.execution_log if "repair_attempt" in log
-            ]
+            repair_logs = [log for log in result.execution_log if "repair_attempt" in log]
             assert len(repair_logs) >= 1
 
 
@@ -544,9 +533,7 @@ class TestEndToEndValidation:
         # Check for validation in execution log
         if "validation_failed" in result.execution_log:
             # If validation failed, should have attempted repair
-            repair_logs = [
-                log for log in result.execution_log if "repair_attempt" in log
-            ]
+            repair_logs = [log for log in result.execution_log if "repair_attempt" in log]
             assert len(repair_logs) > 0
         elif "validation_ok" in result.execution_log:
             # Validation passed

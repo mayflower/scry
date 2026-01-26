@@ -89,16 +89,36 @@ ignore = [
     "B904",   # raise from inside except without explicit exception chaining
     "SIM105", # use contextlib.suppress
     "SIM108", # use ternary operator instead of if-else
+    "SIM117", # nested with statements - often clearer for complex mocking
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = [
     "S101",   # assert in tests is expected
     "S311",   # pseudo-random generator ok in tests
+    "S603",   # subprocess calls in tests are controlled
+    "S607",   # partial executable paths in tests are ok
 ]
 "**/test_*.py" = [
     "S101",   # assert in tests is expected
+    "S108",   # /tmp paths in tests are acceptable
+    "S110",   # try-except-pass in tests for cleanup
     "S311",   # pseudo-random generator ok in tests
+    "S603",   # subprocess calls in tests are controlled
+    "S607",   # partial executable paths in tests are ok
+]
+# API routes use controlled env vars for URLs
+"**/api/routes.py" = [
+    "S310",   # URL from controlled env var with safe default
+]
+# Runner executes generated scripts - controlled subprocess usage
+"**/executor/runner.py" = [
+    "S603",   # subprocess calls execute our generated scripts
+    "S607",   # python executable path is intentional
+]
+# MCP server binds to 0.0.0.0 for Docker container deployment
+"**/mcp_server.py" = [
+    "S104",   # binding to all interfaces for Docker/K8s
 ]
 
 [tool.mypy]
@@ -123,6 +143,7 @@ module = [
     "fastmcp.*",
     "PIL.*",
     "opentelemetry.*",
+    "jsonschema.*",
 ]
 ignore_missing_imports = true
 

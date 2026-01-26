@@ -13,6 +13,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+
 from scry.api.dto import ScrapeRequest
 from scry.config.settings import settings
 from scry.core.codegen.generator import generate_script
@@ -129,9 +130,7 @@ class TestRealSelfHealing:
                 )
 
                 # Should succeed after patch
-                assert result.returncode == 0, (
-                    f"Still failed after patch: {result.stderr}"
-                )
+                assert result.returncode == 0, f"Still failed after patch: {result.stderr}"
 
     @pytest.mark.integration
     @pytest.mark.slow
@@ -228,9 +227,7 @@ class TestRealSelfHealing:
         plan = ScrapePlan(
             steps=[
                 Navigate(url="https://mayflower.de/"),
-                WaitFor(
-                    selector=".complex-element-that-might-not-exist", state="visible"
-                ),
+                WaitFor(selector=".complex-element-that-might-not-exist", state="visible"),
                 Navigate(url="https://mayflower.de/leistungen/"),
             ],
         )
@@ -266,10 +263,7 @@ class TestRealSelfHealing:
                     patch = propose_patch(attempts, result.stderr, None)
 
                     # Verify patch includes wait adjustments
-                    assert (
-                        patch.get("wait_load_state") is True
-                        or patch.get("extra_wait_ms", 0) > 0
-                    )
+                    assert patch.get("wait_load_state") is True or patch.get("extra_wait_ms", 0) > 0
 
                     options = merge_codegen_options(options, patch)
 
@@ -373,9 +367,7 @@ class TestRealSelfHealing:
                     timeout=60,
                 )
 
-                assert result.returncode == 0, (
-                    "Multi-page navigation failed even with healing"
-                )
+                assert result.returncode == 0, "Multi-page navigation failed even with healing"
 
     @pytest.mark.integration
     @pytest.mark.slow

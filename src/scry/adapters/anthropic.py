@@ -15,7 +15,6 @@ import json
 import os
 from typing import Any
 
-
 # Browser Tool configuration (following browser-use-demo approach)
 # Uses standard messages API with custom tool definition, NOT beta browser tools API
 BROWSER_TOOL_MODEL = "claude-sonnet-4-20250514"
@@ -130,17 +129,15 @@ def _client():
 
     key = _get_api_key()
     if not key:
-        raise RuntimeError(
-            "Anthropic API key not found in ANTHROPIC_API_KEY or CLAUDE_API_KEY"
-        )
+        raise RuntimeError("Anthropic API key not found in ANTHROPIC_API_KEY or CLAUDE_API_KEY")
     return Anthropic(api_key=key)
 
 
 def _extract_json(text: str) -> dict[str, Any]:
-    # Best-effort JSON extraction
+    # Best-effort JSON extraction - silent failures are intentional as we try multiple strategies
     try:
         return json.loads(text)
-    except Exception:
+    except Exception:  # noqa: S110
         pass
     start = text.find("{")
     end = text.rfind("}")
@@ -148,7 +145,7 @@ def _extract_json(text: str) -> dict[str, Any]:
         snippet = text[start : end + 1]
         try:
             return json.loads(snippet)
-        except Exception:
+        except Exception:  # noqa: S110
             pass
     # Try code fence blocks
     if "```" in text:
@@ -159,7 +156,7 @@ def _extract_json(text: str) -> dict[str, Any]:
                 candidate = candidate[candidate.find("\n") + 1 :]
             try:
                 return json.loads(candidate)
-            except Exception:
+            except Exception:  # noqa: S112
                 continue
     raise ValueError("Failed to parse JSON from Claude response")
 

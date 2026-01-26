@@ -7,11 +7,13 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ...adapters.anthropic import complete_json, has_api_key
 from ..ir.model import Click, Fill, Navigate, PlanStep, ScrapePlan, WaitFor
-from ..nav.explore import ExplorationResult
+
+if TYPE_CHECKING:
+    from ..nav.explore import ExplorationResult
 
 
 def optimize_plan(plan: ScrapePlan) -> ScrapePlan:
@@ -125,9 +127,7 @@ def compress_min_path_with_anthropic(
         elif isinstance(s, Fill):
             steps_repr.append({"type": "fill", "selector": s.selector, "text": s.text})
         elif isinstance(s, WaitFor):
-            steps_repr.append(
-                {"type": "wait_for", "selector": s.selector, "state": s.state}
-            )
+            steps_repr.append({"type": "wait_for", "selector": s.selector, "state": s.state})
         elif isinstance(s, Validate):
             steps_repr.append(
                 {
@@ -166,9 +166,7 @@ def compress_min_path_with_anthropic(
             elif t == "click" and s.get("selector"):
                 out_steps.append(Click(selector=str(s["selector"])))
             elif t == "fill" and s.get("selector"):
-                out_steps.append(
-                    Fill(selector=str(s["selector"]), text=str(s.get("text", "")))
-                )
+                out_steps.append(Fill(selector=str(s["selector"]), text=str(s.get("text", ""))))
             elif t in ("wait_for", "wait", "waitfor") and s.get("selector"):
                 out_steps.append(
                     WaitFor(
@@ -177,10 +175,8 @@ def compress_min_path_with_anthropic(
                     )
                 )
         if out_steps:
-            return ScrapePlan(
-                steps=out_steps, notes=str(data.get("notes") or "compressed")
-            )
-    except Exception:
+            return ScrapePlan(steps=out_steps, notes=str(data.get("notes") or "compressed"))
+    except Exception:  # noqa: S110 - fallback to unoptimized steps on failure
         pass
 
     return ScrapePlan(steps=explore.steps, notes="fallback: explored steps")

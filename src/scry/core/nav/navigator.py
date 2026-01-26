@@ -6,8 +6,7 @@ and returning collected HTML snapshots.
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import unquote
 
 from playwright.sync_api import TimeoutError as PWTimeoutError
@@ -24,6 +23,9 @@ from ..ir.model import (
     Upload,
     WaitFor,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def execute_plan(
@@ -62,14 +64,10 @@ def execute_plan(
             page = context.new_page()
             page.set_default_timeout(timeout_ms)
 
-            step_index = 0
-            for step in plan.steps:
-                step_index += 1
+            for step_index, step in enumerate(plan.steps, start=1):
                 if isinstance(step, Navigate):
                     # Support data: URLs to enable hermetic tests without network
-                    if isinstance(step.url, str) and step.url.startswith(
-                        "data:text/html"
-                    ):
+                    if isinstance(step.url, str) and step.url.startswith("data:text/html"):
                         try:
                             html_part = step.url.split(",", 1)[1]
                             page.set_content(unquote(html_part))
@@ -120,12 +118,11 @@ def execute_plan(
                 try:
                     page.evaluate("window.scrollTo(0, document.body.scrollHeight/2)")
                     out_path2 = (
-                        screenshots_dir
-                        / f"{'' if step_index else ''}step-{step_index}-scroll.png"
+                        screenshots_dir / f"{'' if step_index else ''}step-{step_index}-scroll.png"
                     )
                     page.screenshot(path=str(out_path2), full_page=True)
                     screenshots.append(out_path2)
-                except Exception:
+                except Exception:  # noqa: S110 - screenshot failure shouldn't stop navigation
                     pass
 
         finally:

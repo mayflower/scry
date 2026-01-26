@@ -10,8 +10,7 @@ No AI at runtime; purely deterministic.
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..ir.model import (
     Click,
@@ -25,6 +24,9 @@ from ..ir.model import (
     Validate,
     WaitFor,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 TEMPLATE = """#!/usr/bin/env python3
 import json
@@ -68,12 +70,9 @@ def _render_steps(
     cookie_dismiss_selector: str | None = None,
 ) -> str:
     lines: list[str] = []
-    index = 0
     page_num = 0
 
-    for step in plan.steps:
-        index += 1
-
+    for index, step in enumerate(plan.steps, start=1):
         if isinstance(step, Navigate):
             page_num += 1
             # Escape newlines and quotes in URLs (especially for data: URLs)
@@ -97,12 +96,8 @@ def _render_steps(
             lines.append(
                 f'        page.screenshot(path=str(screens_dir / "step-{index}.png"), full_page=True)'
             )
-            lines.append(
-                f'        html_out = html_dir / f"{{JOB_ID}}-page-{page_num}.html"'
-            )
-            lines.append(
-                '        html_out.write_text(page.content(), encoding="utf-8")'
-            )
+            lines.append(f'        html_out = html_dir / f"{{JOB_ID}}-page-{page_num}.html"')
+            lines.append('        html_out.write_text(page.content(), encoding="utf-8")')
             lines.append(
                 '        page.evaluate("window.scrollTo(0, document.body.scrollHeight/2)")'
             )
@@ -113,26 +108,18 @@ def _render_steps(
         elif isinstance(step, Click):
             lines.append(f"        # Step {index}: Click {step.selector}")
             lines.append("        try:")
-            lines.append(
-                f'            page.locator("{step.selector}").click(timeout=5000)'
-            )
-            lines.append(
-                '            page.wait_for_load_state("domcontentloaded", timeout=5000)'
-            )
+            lines.append(f'            page.locator("{step.selector}").click(timeout=5000)')
+            lines.append('            page.wait_for_load_state("domcontentloaded", timeout=5000)')
             lines.append(
                 f'            page.screenshot(path=str(screens_dir / "step-{index}-click.png"), full_page=True)'
             )
             lines.append("        except Exception as e:")
-            lines.append(
-                f'            print(f"Failed to click {step.selector}: {{e}}")'
-            )
+            lines.append(f'            print(f"Failed to click {step.selector}: {{e}}")')
 
         elif isinstance(step, Fill):
             lines.append(f"        # Step {index}: Fill {step.selector} with text")
             lines.append("        try:")
-            lines.append(
-                f'            page.locator("{step.selector}").fill("{step.text}")'
-            )
+            lines.append(f'            page.locator("{step.selector}").fill("{step.text}")')
             lines.append(
                 f'            page.screenshot(path=str(screens_dir / "step-{index}-fill.png"), full_page=True)'
             )
@@ -156,9 +143,7 @@ def _render_steps(
             lines.append('            print(f"Timeout waiting for selector: {e}")')
 
         elif isinstance(step, Validate):
-            lines.append(
-                f"        # Step {index}: Validate {step.description or step.selector}"
-            )
+            lines.append(f"        # Step {index}: Validate {step.description or step.selector}")
             lines.append("        try:")
             lines.append(f'            element = page.locator("{step.selector}")')
 
@@ -174,16 +159,12 @@ def _render_steps(
                 )
             elif step.validation_type == "text" and step.expected_text:
                 lines.append("            actual_text = element.text_content()")
-                lines.append(
-                    f'            if "{step.expected_text}" not in actual_text:'
-                )
+                lines.append(f'            if "{step.expected_text}" not in actual_text:')
                 lines.append(
                     f'                raise Exception("Validation failed: text mismatch - {step.description}")'
                 )
             elif step.validation_type == "count" and step.expected_count:
-                lines.append(
-                    f"            if element.count() != {step.expected_count}:"
-                )
+                lines.append(f"            if element.count() != {step.expected_count}:")
                 lines.append(
                     f'                raise Exception("Validation failed: count mismatch - {step.description}")'
                 )
@@ -195,9 +176,7 @@ def _render_steps(
                 lines.append("            import sys")
                 lines.append("            sys.exit(1)  # Exit for self-healing")
             else:
-                lines.append(
-                    '            print(f"Non-critical validation failed: {e}")'
-                )
+                lines.append('            print(f"Non-critical validation failed: {e}")')
 
         elif isinstance(step, Select):
             lines.append(f"        # Step {index}: Select option in {step.selector}")
@@ -224,14 +203,10 @@ def _render_steps(
 
         elif isinstance(step, KeyPress):
             selector_text = f" on {step.selector}" if step.selector else ""
-            lines.append(
-                f"        # Step {index}: Press key '{step.key}'{selector_text}"
-            )
+            lines.append(f"        # Step {index}: Press key '{step.key}'{selector_text}")
             lines.append("        try:")
             if step.selector:
-                lines.append(
-                    f'            page.locator("{step.selector}").press("{step.key}")'
-                )
+                lines.append(f'            page.locator("{step.selector}").press("{step.key}")')
             else:
                 lines.append(f'            page.keyboard.press("{step.key}")')
             lines.append(
@@ -243,9 +218,7 @@ def _render_steps(
         elif isinstance(step, Upload):
             lines.append(f"        # Step {index}: Upload file to {step.selector}")
             lines.append("        try:")
-            lines.append(
-                f'            page.set_input_files("{step.selector}", "{step.file_path}")'
-            )
+            lines.append(f'            page.set_input_files("{step.selector}", "{step.file_path}")')
             lines.append(
                 f'            page.screenshot(path=str(screens_dir / "step-{index}-upload.png"), full_page=True)'
             )
@@ -263,24 +236,16 @@ def _render_steps(
     lines.append("                limit = spec.get('limit', 10)")
     lines.append("                items = []")
     lines.append("                try:")
-    lines.append(
-        "                    elements = page.locator(parent_sel).all()[:limit]"
-    )
+    lines.append("                    elements = page.locator(parent_sel).all()[:limit]")
     lines.append("                    for elem in elements:")
     lines.append("                        item = {}")
-    lines.append(
-        "                        for sub_field, sub_spec in fields_spec.items():"
-    )
+    lines.append("                        for sub_field, sub_spec in fields_spec.items():")
     lines.append("                            sub_sel = sub_spec.get('selector', '')")
     lines.append("                            attr = sub_spec.get('attribute')")
     lines.append("                            try:")
-    lines.append(
-        "                                sub_elem = elem.locator(sub_sel).first"
-    )
+    lines.append("                                sub_elem = elem.locator(sub_sel).first")
     lines.append("                                if attr:")
-    lines.append(
-        "                                    value = sub_elem.get_attribute(attr)"
-    )
+    lines.append("                                    value = sub_elem.get_attribute(attr)")
     lines.append("                                else:")
     lines.append("                                    value = sub_elem.text_content()")
     lines.append("                                if value:")
@@ -291,15 +256,11 @@ def _render_steps(
     lines.append("                            items.append(item)")
     lines.append("                    result[field] = items")
     lines.append("                except Exception as e:")
-    lines.append(
-        "                    print(f'Array extraction failed for {field}: {e}')"
-    )
+    lines.append("                    print(f'Array extraction failed for {field}: {e}')")
     lines.append("                    result[field] = []")
     lines.append("            else:")
     lines.append("                # Simple field extraction")
-    lines.append(
-        "                sel = spec.get('selector') if isinstance(spec, dict) else None"
-    )
+    lines.append("                sel = spec.get('selector') if isinstance(spec, dict) else None")
     lines.append("                if not sel: continue")
     lines.append("                try:")
     lines.append("                    text = page.locator(sel).first.text_content()")
@@ -309,24 +270,16 @@ def _render_steps(
     lines.append("                        text = ''")
     lines.append("                except Exception:")
     lines.append("                    text = ''")
-    lines.append(
-        "                rx = spec.get('regex') if isinstance(spec, dict) else None"
-    )
+    lines.append("                rx = spec.get('regex') if isinstance(spec, dict) else None")
     lines.append("                if rx:")
     lines.append("                    import re")
     lines.append("                    m = re.search(rx, text)")
     lines.append("                    if m:")
-    lines.append(
-        "                        text = m.group(1) if m.groups() else m.group(0)"
-    )
+    lines.append("                        text = m.group(1) if m.groups() else m.group(0)")
     lines.append("                # Attempt number cast")
     lines.append("                try:")
-    lines.append(
-        "                    if text and all(c.isdigit() or c in ',. ' for c in text):"
-    )
-    lines.append(
-        "                        num = int(''.join([c for c in text if c.isdigit()]))"
-    )
+    lines.append("                    if text and all(c.isdigit() or c in ',. ' for c in text):")
+    lines.append("                        num = int(''.join([c for c in text if c.isdigit()]))")
     lines.append("                        result[field] = num")
     lines.append("                    else:")
     lines.append("                        result[field] = text")
@@ -353,9 +306,7 @@ def generate_script(
         cookie_dismiss_selector=options.get("cookie_dismiss_selector"),
     )
     # Properly serialize the extraction_spec and escape backslashes for embedding in Python string
-    extraction_spec = json.dumps(options.get("extraction_spec", {})).replace(
-        "\\", "\\\\"
-    )
+    extraction_spec = json.dumps(options.get("extraction_spec", {})).replace("\\", "\\\\")
 
     script = TEMPLATE.format(
         artifacts_root=str(artifacts_root),
@@ -372,6 +323,6 @@ def generate_script(
     out_path.write_text(script, encoding="utf-8")
     try:
         out_path.chmod(0o755)
-    except Exception:
+    except Exception:  # noqa: S110 - chmod may fail on some filesystems
         pass
     return out_path

@@ -12,6 +12,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
+
 from scry.core.self_heal.diagnose import _heuristic_patch, propose_patch
 from scry.core.self_heal.patch import merge_codegen_options
 
@@ -247,10 +248,7 @@ class TestValidationBasedHealing:
         for error in validation_errors:
             patch = propose_patch(1, error, None)
             # Should recognize as error needing wait/retry
-            assert (
-                patch.get("wait_load_state") is True
-                or patch.get("extra_wait_ms", 0) > 0
-            )
+            assert patch.get("wait_load_state") is True or patch.get("extra_wait_ms", 0) > 0
 
     def test_critical_vs_non_critical_handling(self):
         """Test different handling for critical vs non-critical validations."""

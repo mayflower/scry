@@ -9,8 +9,9 @@ Hook points for Anthropic Claude are left as placeholders.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from ...adapters.anthropic import complete_json, has_api_key
-from ...api.dto import ScrapeRequest
 from ..ir.model import (
     Click,
     Fill,
@@ -23,6 +24,9 @@ from ..ir.model import (
     Validate,
     WaitFor,
 )
+
+if TYPE_CHECKING:
+    from ...api.dto import ScrapeRequest
 
 
 def _build_default(req: ScrapeRequest) -> ScrapePlan:
@@ -77,15 +81,7 @@ def build_plan(req: ScrapeRequest) -> ScrapePlan:
     try:
         data, _ = complete_json(sys_prompt, user_prompt, max_tokens=400)
         steps: list[
-            Navigate
-            | Click
-            | Fill
-            | Select
-            | Hover
-            | KeyPress
-            | Upload
-            | WaitFor
-            | Validate
+            Navigate | Click | Fill | Select | Hover | KeyPress | Upload | WaitFor | Validate
         ] = []
         for s in data.get("steps", []) or []:
             if not isinstance(s, dict):
@@ -108,13 +104,14 @@ def build_plan(req: ScrapeRequest) -> ScrapePlan:
                 sel = s.get("selector", "")
                 state = s.get("state", "visible")
                 # Skip WaitFor on metadata elements that are never visible
-                if isinstance(sel, str) and sel:
-                    # Don't wait for title, meta, or script tags
-                    if not any(
-                        tag in sel.lower()
-                        for tag in ["title", "meta", "script", "style", "head"]
-                    ):
-                        steps.append(WaitFor(selector=sel, state=str(state)))
+                if (
+                    isinstance(sel, str)
+                    and sel
+                    and not any(
+                        tag in sel.lower() for tag in ["title", "meta", "script", "style", "head"]
+                    )
+                ):
+                    steps.append(WaitFor(selector=sel, state=str(state)))
             elif typ == "select":
                 sel = s.get("selector", "")
                 value = s.get("value", "")

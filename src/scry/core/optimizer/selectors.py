@@ -9,9 +9,7 @@ from __future__ import annotations
 import re
 
 
-def make_resilient_selector(
-    selector: str, element_html: str | None = None
-) -> list[str]:
+def make_resilient_selector(selector: str, element_html: str | None = None) -> list[str]:
     """Generate multiple fallback selectors for resilience.
 
     Args:

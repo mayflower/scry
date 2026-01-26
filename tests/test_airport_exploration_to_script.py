@@ -67,9 +67,7 @@ class TestAirportExplorationToScript:
             },
         }
 
-    def run_exploration(
-        self, airport_url: str, schema: dict[str, Any]
-    ) -> dict[str, Any]:
+    def run_exploration(self, airport_url: str, schema: dict[str, Any]) -> dict[str, Any]:
         """Run exploration phase to find flight data."""
         payload = {
             "nl_request": (
@@ -109,9 +107,7 @@ class TestAirportExplorationToScript:
         """Extract the generated Playwright script from artifacts."""
         # Look for generated script in artifacts directory
         artifacts_dir = (
-            Path("/app/artifacts")
-            if os.path.exists("/app/artifacts")
-            else Path("artifacts")
+            Path("/app/artifacts") if os.path.exists("/app/artifacts") else Path("artifacts")
         )
         script_path = artifacts_dir / "generated_code" / f"{job_id}.py"
 
@@ -130,9 +126,7 @@ class TestAirportExplorationToScript:
 
         return None
 
-    def run_generated_script(
-        self, script_content: str, schema: dict[str, Any]
-    ) -> dict[str, Any]:
+    def run_generated_script(self, script_content: str, schema: dict[str, Any]) -> dict[str, Any]:
         """Run the generated script and extract data."""
         if not script_content:
             pytest.skip("No generated script found")
@@ -281,9 +275,7 @@ class TestAirportExplorationToScript:
 
                 assert is_valid, "Generated script did not produce similar results"
             else:
-                print(
-                    "⚠️ No generated script found, checking if data was extracted directly"
-                )
+                print("⚠️ No generated script found, checking if data was extracted directly")
                 assert exploration_data, "No data extracted and no script generated"
 
     @pytest.mark.slow
@@ -346,9 +338,7 @@ class TestAirportExplorationToScript:
 
             if ir_file.exists():
                 plan_data = json.loads(ir_file.read_text())
-                print(
-                    f"✅ Found IR/Plan with {len(plan_data.get('actions', []))} actions"
-                )
+                print(f"✅ Found IR/Plan with {len(plan_data.get('actions', []))} actions")
 
                 # Validate it's a proper ScrapePlan
                 assert "actions" in plan_data
