@@ -23,6 +23,16 @@ _ERR_REF_OR_COORD_REQUIRED = "Either ref or coordinate is required"
 _ERR_COORD_FORMAT = "coordinate must be [x, y]"
 _ERR_START_COORD_FORMAT = "start_coordinate must be [x, y]"
 
+# Modifier key mapping
+_MODIFIER_KEYS: dict[str, str] = {
+    "ctrl": "Control",
+    "control": "Control",
+    "cmd": "Meta",
+    "meta": "Meta",
+    "shift": "Shift",
+    "alt": "Alt",
+}
+
 
 class BrowserExecutor:
     """Executes browser actions and manages browser state.
@@ -556,6 +566,20 @@ class BrowserExecutor:
 
         return self._success_result(tool_use_id, [{"type": "text", "text": f"Typed: {text[:50]}"}])
 
+    def _press_modifiers(self, modifiers: list[str]) -> None:
+        """Press modifier keys down."""
+        for mod in modifiers:
+            key = _MODIFIER_KEYS.get(mod)
+            if key:
+                self.page.keyboard.down(key)
+
+    def _release_modifiers(self, modifiers: list[str]) -> None:
+        """Release modifier keys."""
+        for mod in modifiers:
+            key = _MODIFIER_KEYS.get(mod)
+            if key:
+                self.page.keyboard.up(key)
+
     def _handle_key(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Press key or key combination."""
         key_text = input_data.get("text", "")
@@ -565,37 +589,14 @@ class BrowserExecutor:
 
         # Handle key combinations (ctrl+a, cmd+v, etc.)
         if "+" in key_text:
-            # Split into modifiers + key
             parts = key_text.lower().split("+")
             modifiers = parts[:-1]
             key = parts[-1]
 
-            # Press modifiers
-            for mod in modifiers:
-                if mod in ("ctrl", "control"):
-                    self.page.keyboard.down("Control")
-                elif mod in ("cmd", "meta"):
-                    self.page.keyboard.down("Meta")
-                elif mod == "shift":
-                    self.page.keyboard.down("Shift")
-                elif mod == "alt":
-                    self.page.keyboard.down("Alt")
-
-            # Press key
+            self._press_modifiers(modifiers)
             self.page.keyboard.press(key.capitalize())
-
-            # Release modifiers
-            for mod in modifiers:
-                if mod in ("ctrl", "control"):
-                    self.page.keyboard.up("Control")
-                elif mod in ("cmd", "meta"):
-                    self.page.keyboard.up("Meta")
-                elif mod == "shift":
-                    self.page.keyboard.up("Shift")
-                elif mod == "alt":
-                    self.page.keyboard.up("Alt")
+            self._release_modifiers(modifiers)
         else:
-            # Single key
             self.page.keyboard.press(key_text.capitalize())
 
         return self._success_result(

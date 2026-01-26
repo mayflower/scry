@@ -88,243 +88,302 @@ with sync_playwright() as p:
 """
 
 
+# --- Step Renderers ---
+
+
+def _render_navigate(
+    step: Navigate,
+    index: int,
+    page_num: int,
+    cookie_dismiss_selector: str | None,
+) -> list[str]:
+    """Render a Navigate step."""
+    lines: list[str] = []
+    safe_url = (
+        step.url.replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r").replace('"', '\\"')
+    )
+    comment_url = step.url[:50].replace("\n", " ").replace("\r", " ")
+    lines.append(f"        # Step {index}: Navigate to {comment_url}...")
+    lines.append(f'        page.goto("{safe_url}")')
+
+    if page_num == 1 and cookie_dismiss_selector:
+        escaped_selector = cookie_dismiss_selector.replace('"', '\\"')
+        lines.append(
+            f'        try:\n            page.locator("{escaped_selector}").click(timeout=2000)\n        except Exception:\n            pass'
+        )
+
+    lines.append(
+        f'        page.screenshot(path=str(screens_dir / "step-{index}.png"), full_page=True)'
+    )
+    lines.append(f'        html_out = html_dir / f"{{JOB_ID}}-page-{page_num}.html"')
+    lines.append('        html_out.write_text(page.content(), encoding="utf-8")')
+    lines.append('        page.evaluate("window.scrollTo(0, document.body.scrollHeight/2)")')
+    lines.append(
+        f'        page.screenshot(path=str(screens_dir / "step-{index}-scroll.png"), full_page=True)'
+    )
+    return lines
+
+
+def _render_click(step: Click, index: int) -> list[str]:
+    """Render a Click step."""
+    lines = [f"        # Step {index}: Click {step.selector}"]
+    lines.extend(
+        _wrap_in_try_except(
+            [
+                f'page.locator("{step.selector}").click(timeout=5000)',
+                'page.wait_for_load_state("domcontentloaded", timeout=5000)',
+                f'page.screenshot(path=str(screens_dir / "step-{index}-click.png"), full_page=True)',
+            ],
+            f"Failed to click {step.selector}",
+        )
+    )
+    return lines
+
+
+def _render_fill(step: Fill, index: int) -> list[str]:
+    """Render a Fill step."""
+    lines = [f"        # Step {index}: Fill {step.selector} with text"]
+    lines.extend(
+        _wrap_in_try_except(
+            [
+                f'page.locator("{step.selector}").fill("{step.text}")',
+                f'page.screenshot(path=str(screens_dir / "step-{index}-fill.png"), full_page=True)',
+            ],
+            f"Failed to fill {step.selector}",
+        )
+    )
+    return lines
+
+
+def _render_wait_for(step: WaitFor, index: int) -> list[str]:
+    """Render a WaitFor step."""
+    state_map = {
+        "visible": "visible",
+        "hidden": "hidden",
+        "attached": "attached",
+        "detached": "detached",
+    }
+    state = state_map.get(step.state, "visible")
+    lines = [f"        # Step {index}: Wait for {step.selector}"]
+    lines.extend(
+        _wrap_in_try_except(
+            [f'page.locator("{step.selector}").first.wait_for(state="{state}", timeout=10000)'],
+            "Timeout waiting for selector",
+        )
+    )
+    return lines
+
+
+def _render_validate_body(step: Validate) -> list[str]:
+    """Render the validation logic based on type."""
+    lines: list[str] = []
+    if step.validation_type == "presence":
+        lines.append("            if not element.is_visible(timeout=5000):")
+        lines.append(
+            f'                raise Exception("Validation failed: element not found - {step.description}")'
+        )
+    elif step.validation_type == "absence":
+        lines.append("            if element.is_visible(timeout=1000):")
+        lines.append(
+            f'                raise Exception("Validation failed: element should not be present - {step.description}")'
+        )
+    elif step.validation_type == "text" and step.expected_text:
+        lines.append("            actual_text = element.text_content()")
+        lines.append(f'            if "{step.expected_text}" not in actual_text:')
+        lines.append(
+            f'                raise Exception("Validation failed: text mismatch - {step.description}")'
+        )
+    elif step.validation_type == "count" and step.expected_count:
+        lines.append(f"            if element.count() != {step.expected_count}:")
+        lines.append(
+            f'                raise Exception("Validation failed: count mismatch - {step.description}")'
+        )
+    return lines
+
+
+def _render_validate(step: Validate, index: int) -> list[str]:
+    """Render a Validate step."""
+    lines = [
+        f"        # Step {index}: Validate {step.description or step.selector}",
+        "        try:",
+        f'            element = page.locator("{step.selector}")',
+    ]
+    lines.extend(_render_validate_body(step))
+    lines.append(f'            print("Validation passed: {step.description}")')
+    lines.append("        except Exception as e:")
+
+    if step.is_critical:
+        lines.append('            print(f"CRITICAL validation failed: {e}")')
+        lines.append("            import sys")
+        lines.append("            sys.exit(1)  # Exit for self-healing")
+    else:
+        lines.append('            print(f"Non-critical validation failed: {e}")')
+    return lines
+
+
+def _render_select(step: Select, index: int) -> list[str]:
+    """Render a Select step."""
+    lines = [f"        # Step {index}: Select option in {step.selector}"]
+    lines.extend(
+        _wrap_in_try_except(
+            [
+                f'page.locator("{step.selector}").select_option("{step.value}")',
+                f'page.screenshot(path=str(screens_dir / "step-{index}-select.png"), full_page=True)',
+            ],
+            "Failed to select option",
+        )
+    )
+    return lines
+
+
+def _render_hover(step: Hover, index: int) -> list[str]:
+    """Render a Hover step."""
+    lines = [f"        # Step {index}: Hover over {step.selector}"]
+    lines.extend(
+        _wrap_in_try_except(
+            [
+                f'page.locator("{step.selector}").hover()',
+                "page.wait_for_timeout(500)",
+                f'page.screenshot(path=str(screens_dir / "step-{index}-hover.png"), full_page=True)',
+            ],
+            "Failed to hover",
+        )
+    )
+    return lines
+
+
+def _render_keypress(step: KeyPress, index: int) -> list[str]:
+    """Render a KeyPress step."""
+    selector_text = f" on {step.selector}" if step.selector else ""
+    key_action = (
+        f'page.locator("{step.selector}").press("{step.key}")'
+        if step.selector
+        else f'page.keyboard.press("{step.key}")'
+    )
+    lines = [f"        # Step {index}: Press key '{step.key}'{selector_text}"]
+    lines.extend(
+        _wrap_in_try_except(
+            [
+                key_action,
+                f'page.screenshot(path=str(screens_dir / "step-{index}-keypress.png"), full_page=True)',
+            ],
+            "Failed to press key",
+        )
+    )
+    return lines
+
+
+def _render_upload(step: Upload, index: int) -> list[str]:
+    """Render an Upload step."""
+    lines = [f"        # Step {index}: Upload file to {step.selector}"]
+    lines.extend(
+        _wrap_in_try_except(
+            [
+                f'page.set_input_files("{step.selector}", "{step.file_path}")',
+                f'page.screenshot(path=str(screens_dir / "step-{index}-upload.png"), full_page=True)',
+            ],
+            "Failed to upload file",
+        )
+    )
+    return lines
+
+
+def _render_extraction_block() -> list[str]:
+    """Render the extraction block that handles both simple and array extraction."""
+    return [
+        "        # Extraction per spec",
+        "        result = {}",
+        "        for field, spec in EXTRACTION_SPEC.items():",
+        "            if isinstance(spec, dict) and 'fields' in spec:",
+        "                # Array extraction with nested fields",
+        "                parent_sel = spec.get('selector')",
+        "                fields_spec = spec.get('fields', {})",
+        "                limit = spec.get('limit', 10)",
+        "                items = []",
+        _EXTRACT_TRY,
+        "                    elements = page.locator(parent_sel).all()[:limit]",
+        "                    for elem in elements:",
+        "                        item = {}",
+        "                        for sub_field, sub_spec in fields_spec.items():",
+        "                            sub_sel = sub_spec.get('selector', '')",
+        "                            attr = sub_spec.get('attribute')",
+        "                            try:",
+        "                                sub_elem = elem.locator(sub_sel).first",
+        "                                if attr:",
+        "                                    value = sub_elem.get_attribute(attr)",
+        "                                else:",
+        "                                    value = sub_elem.text_content()",
+        "                                if value:",
+        "                                    item[sub_field] = value.strip()",
+        "                            except Exception:",
+        "                                pass",
+        "                        if item:",
+        "                            items.append(item)",
+        "                    result[field] = items",
+        "                except Exception as e:",
+        "                    print(f'Array extraction failed for {field}: {e}')",
+        "                    result[field] = []",
+        "            else:",
+        "                # Simple field extraction",
+        "                sel = spec.get('selector') if isinstance(spec, dict) else None",
+        "                if not sel: continue",
+        _EXTRACT_TRY,
+        "                    text = page.locator(sel).first.text_content()",
+        "                    if text:",
+        "                        text = text.strip()",
+        "                    else:",
+        "                        text = ''",
+        "                except Exception:",
+        "                    text = ''",
+        "                rx = spec.get('regex') if isinstance(spec, dict) else None",
+        "                if rx:",
+        "                    import re",
+        "                    m = re.search(rx, text)",
+        "                    if m:",
+        "                        text = m.group(1) if m.groups() else m.group(0)",
+        "                # Attempt number cast",
+        _EXTRACT_TRY,
+        "                    if text and all(c.isdigit() or c in ',. ' for c in text):",
+        "                        num = int(''.join([c for c in text if c.isdigit()]))",
+        "                        result[field] = num",
+        "                    else:",
+        "                        result[field] = text",
+        "                except Exception:",
+        "                    result[field] = text",
+        "        (data_dir / f\"{JOB_ID}.json\").write_text(__import__('json').dumps(result), encoding='utf-8')",
+    ]
+
+
 def _render_steps(
     plan: ScrapePlan,
     cookie_dismiss_selector: str | None = None,
 ) -> str:
+    """Render all steps in a plan to code."""
     lines: list[str] = []
     page_num = 0
 
     for index, step in enumerate(plan.steps, start=1):
         if isinstance(step, Navigate):
             page_num += 1
-            # Escape newlines and quotes in URLs (especially for data: URLs)
-            safe_url = (
-                step.url.replace("\\", "\\\\")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace('"', '\\"')
-            )
-            # For comment, also clean the URL to avoid breaking across lines
-            comment_url = step.url[:50].replace("\n", " ").replace("\r", " ")
-            lines.append(f"        # Step {index}: Navigate to {comment_url}...")
-            lines.append(f'        page.goto("{safe_url}")')
-            # Handle cookie banner on first navigation (only if LLM detected a selector)
-            if page_num == 1 and cookie_dismiss_selector:
-                # Use LLM-detected selector - no fallback to string matching
-                escaped_selector = cookie_dismiss_selector.replace('"', '\\"')
-                lines.append(
-                    f'        try:\n            page.locator("{escaped_selector}").click(timeout=2000)\n        except Exception:\n            pass'
-                )
-            lines.append(
-                f'        page.screenshot(path=str(screens_dir / "step-{index}.png"), full_page=True)'
-            )
-            lines.append(f'        html_out = html_dir / f"{{JOB_ID}}-page-{page_num}.html"')
-            lines.append('        html_out.write_text(page.content(), encoding="utf-8")')
-            lines.append(
-                '        page.evaluate("window.scrollTo(0, document.body.scrollHeight/2)")'
-            )
-            lines.append(
-                f'        page.screenshot(path=str(screens_dir / "step-{index}-scroll.png"), full_page=True)'
-            )
-
+            lines.extend(_render_navigate(step, index, page_num, cookie_dismiss_selector))
         elif isinstance(step, Click):
-            lines.append(f"        # Step {index}: Click {step.selector}")
-            lines.extend(
-                _wrap_in_try_except(
-                    [
-                        f'page.locator("{step.selector}").click(timeout=5000)',
-                        'page.wait_for_load_state("domcontentloaded", timeout=5000)',
-                        f'page.screenshot(path=str(screens_dir / "step-{index}-click.png"), full_page=True)',
-                    ],
-                    f"Failed to click {step.selector}",
-                )
-            )
-
+            lines.extend(_render_click(step, index))
         elif isinstance(step, Fill):
-            lines.append(f"        # Step {index}: Fill {step.selector} with text")
-            lines.extend(
-                _wrap_in_try_except(
-                    [
-                        f'page.locator("{step.selector}").fill("{step.text}")',
-                        f'page.screenshot(path=str(screens_dir / "step-{index}-fill.png"), full_page=True)',
-                    ],
-                    f"Failed to fill {step.selector}",
-                )
-            )
-
+            lines.extend(_render_fill(step, index))
         elif isinstance(step, WaitFor):
-            lines.append(f"        # Step {index}: Wait for {step.selector}")
-            state_map = {
-                "visible": "visible",
-                "hidden": "hidden",
-                "attached": "attached",
-                "detached": "detached",
-            }
-            state = state_map.get(step.state, "visible")
-            lines.extend(
-                _wrap_in_try_except(
-                    [
-                        f'page.locator("{step.selector}").first.wait_for(state="{state}", timeout=10000)',
-                    ],
-                    "Timeout waiting for selector",
-                )
-            )
-
+            lines.extend(_render_wait_for(step, index))
         elif isinstance(step, Validate):
-            lines.append(f"        # Step {index}: Validate {step.description or step.selector}")
-            lines.append("        try:")
-            lines.append(f'            element = page.locator("{step.selector}")')
-
-            if step.validation_type == "presence":
-                lines.append("            if not element.is_visible(timeout=5000):")
-                lines.append(
-                    f'                raise Exception("Validation failed: element not found - {step.description}")'
-                )
-            elif step.validation_type == "absence":
-                lines.append("            if element.is_visible(timeout=1000):")
-                lines.append(
-                    f'                raise Exception("Validation failed: element should not be present - {step.description}")'
-                )
-            elif step.validation_type == "text" and step.expected_text:
-                lines.append("            actual_text = element.text_content()")
-                lines.append(f'            if "{step.expected_text}" not in actual_text:')
-                lines.append(
-                    f'                raise Exception("Validation failed: text mismatch - {step.description}")'
-                )
-            elif step.validation_type == "count" and step.expected_count:
-                lines.append(f"            if element.count() != {step.expected_count}:")
-                lines.append(
-                    f'                raise Exception("Validation failed: count mismatch - {step.description}")'
-                )
-
-            lines.append(f'            print("Validation passed: {step.description}")')
-            lines.append("        except Exception as e:")
-            if step.is_critical:
-                lines.append('            print(f"CRITICAL validation failed: {e}")')
-                lines.append("            import sys")
-                lines.append("            sys.exit(1)  # Exit for self-healing")
-            else:
-                lines.append('            print(f"Non-critical validation failed: {e}")')
-
+            lines.extend(_render_validate(step, index))
         elif isinstance(step, Select):
-            lines.append(f"        # Step {index}: Select option in {step.selector}")
-            lines.extend(
-                _wrap_in_try_except(
-                    [
-                        f'page.locator("{step.selector}").select_option("{step.value}")',
-                        f'page.screenshot(path=str(screens_dir / "step-{index}-select.png"), full_page=True)',
-                    ],
-                    "Failed to select option",
-                )
-            )
-
+            lines.extend(_render_select(step, index))
         elif isinstance(step, Hover):
-            lines.append(f"        # Step {index}: Hover over {step.selector}")
-            lines.extend(
-                _wrap_in_try_except(
-                    [
-                        f'page.locator("{step.selector}").hover()',
-                        "page.wait_for_timeout(500)",
-                        f'page.screenshot(path=str(screens_dir / "step-{index}-hover.png"), full_page=True)',
-                    ],
-                    "Failed to hover",
-                )
-            )
-
+            lines.extend(_render_hover(step, index))
         elif isinstance(step, KeyPress):
-            selector_text = f" on {step.selector}" if step.selector else ""
-            lines.append(f"        # Step {index}: Press key '{step.key}'{selector_text}")
-            key_action = (
-                f'page.locator("{step.selector}").press("{step.key}")'
-                if step.selector
-                else f'page.keyboard.press("{step.key}")'
-            )
-            lines.extend(
-                _wrap_in_try_except(
-                    [
-                        key_action,
-                        f'page.screenshot(path=str(screens_dir / "step-{index}-keypress.png"), full_page=True)',
-                    ],
-                    "Failed to press key",
-                )
-            )
-
+            lines.extend(_render_keypress(step, index))
         elif isinstance(step, Upload):
-            lines.append(f"        # Step {index}: Upload file to {step.selector}")
-            lines.extend(
-                _wrap_in_try_except(
-                    [
-                        f'page.set_input_files("{step.selector}", "{step.file_path}")',
-                        f'page.screenshot(path=str(screens_dir / "step-{index}-upload.png"), full_page=True)',
-                    ],
-                    "Failed to upload file",
-                )
-            )
+            lines.extend(_render_upload(step, index))
 
-    # Extraction block - handles both simple and array extraction
-    lines.append("        # Extraction per spec")
-    lines.append("        result = {}")
-    lines.append("        for field, spec in EXTRACTION_SPEC.items():")
-    lines.append("            if isinstance(spec, dict) and 'fields' in spec:")
-    lines.append("                # Array extraction with nested fields")
-    lines.append("                parent_sel = spec.get('selector')")
-    lines.append("                fields_spec = spec.get('fields', {})")
-    lines.append("                limit = spec.get('limit', 10)")
-    lines.append("                items = []")
-    lines.append(_EXTRACT_TRY)
-    lines.append("                    elements = page.locator(parent_sel).all()[:limit]")
-    lines.append("                    for elem in elements:")
-    lines.append("                        item = {}")
-    lines.append("                        for sub_field, sub_spec in fields_spec.items():")
-    lines.append("                            sub_sel = sub_spec.get('selector', '')")
-    lines.append("                            attr = sub_spec.get('attribute')")
-    lines.append("                            try:")
-    lines.append("                                sub_elem = elem.locator(sub_sel).first")
-    lines.append("                                if attr:")
-    lines.append("                                    value = sub_elem.get_attribute(attr)")
-    lines.append("                                else:")
-    lines.append("                                    value = sub_elem.text_content()")
-    lines.append("                                if value:")
-    lines.append("                                    item[sub_field] = value.strip()")
-    lines.append("                            except Exception:")
-    lines.append("                                pass")
-    lines.append("                        if item:")
-    lines.append("                            items.append(item)")
-    lines.append("                    result[field] = items")
-    lines.append("                except Exception as e:")
-    lines.append("                    print(f'Array extraction failed for {field}: {e}')")
-    lines.append("                    result[field] = []")
-    lines.append("            else:")
-    lines.append("                # Simple field extraction")
-    lines.append("                sel = spec.get('selector') if isinstance(spec, dict) else None")
-    lines.append("                if not sel: continue")
-    lines.append(_EXTRACT_TRY)
-    lines.append("                    text = page.locator(sel).first.text_content()")
-    lines.append("                    if text:")
-    lines.append("                        text = text.strip()")
-    lines.append("                    else:")
-    lines.append("                        text = ''")
-    lines.append("                except Exception:")
-    lines.append("                    text = ''")
-    lines.append("                rx = spec.get('regex') if isinstance(spec, dict) else None")
-    lines.append("                if rx:")
-    lines.append("                    import re")
-    lines.append("                    m = re.search(rx, text)")
-    lines.append("                    if m:")
-    lines.append("                        text = m.group(1) if m.groups() else m.group(0)")
-    lines.append("                # Attempt number cast")
-    lines.append(_EXTRACT_TRY)
-    lines.append("                    if text and all(c.isdigit() or c in ',. ' for c in text):")
-    lines.append("                        num = int(''.join([c for c in text if c.isdigit()]))")
-    lines.append("                        result[field] = num")
-    lines.append("                    else:")
-    lines.append("                        result[field] = text")
-    lines.append("                except Exception:")
-    lines.append("                    result[field] = text")
-    lines.append(
-        "        (data_dir / f\"{JOB_ID}.json\").write_text(__import__('json').dumps(result), encoding='utf-8')"
-    )
+    lines.extend(_render_extraction_block())
     return "\n".join(lines)
 
 
