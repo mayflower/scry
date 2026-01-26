@@ -6,6 +6,7 @@ and returning collected HTML snapshots.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 from urllib.parse import unquote
 
@@ -27,6 +28,7 @@ from ..ir.model import (
 if TYPE_CHECKING:
     from pathlib import Path
 
+logger = logging.getLogger(__name__)
 
 # --- Step Executors ---
 
@@ -166,8 +168,8 @@ def _capture_artifacts(
         out_path2 = screenshots_dir / f"step-{step_index}-scroll.png"
         page.screenshot(path=str(out_path2), full_page=True)
         screenshots.append(out_path2)
-    except Exception:  # noqa: S110 - screenshot failure shouldn't stop navigation
-        pass
+    except Exception as e:
+        logger.debug("Scroll screenshot failed at step %d: %s", step_index, e)
 
 
 # --- Main Entry Point ---

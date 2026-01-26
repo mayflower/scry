@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 try:
     import jsonschema  # type: ignore[import-untyped]
-except Exception:  # pragma: no cover
+except ImportError:  # pragma: no cover
     jsonschema = None  # type: ignore[assignment]
 
 
@@ -27,6 +30,6 @@ def normalize_against_schema(schema: dict[str, Any], data: dict[str, Any]) -> di
     if jsonschema is not None:
         try:
             jsonschema.validate(instance=data, schema=schema)
-        except Exception:  # noqa: S110 - keep best-effort data even if it doesn't validate
-            pass
+        except jsonschema.ValidationError as e:
+            logger.debug("Schema validation failed: %s", e.message)
     return data

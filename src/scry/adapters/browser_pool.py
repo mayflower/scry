@@ -229,31 +229,24 @@ class AsyncBrowserPool:
                     print(f"[BrowserPool] Failed to create replacement browser: {e}")
 
     @asynccontextmanager
-    async def acquire(
-        self, timeout: float = 30.0
-    ) -> AsyncGenerator[tuple[Browser, Playwright], None]:
+    async def acquire(self) -> AsyncGenerator[tuple[Browser, Playwright], None]:
         """Acquire a browser from the pool.
-
-        Args:
-            timeout: Maximum time to wait for a browser (seconds)
 
         Yields:
             Tuple of (Browser, Playwright) instances
 
-        Raises:
-            TimeoutError: If no browser available within timeout
+        Note:
+            Use asyncio.timeout() context manager if you need a timeout:
+            async with asyncio.timeout(30):
+                async with pool.acquire() as (browser, pw):
+                    ...
         """
         if not self._initialized:
             await self.initialize()
 
         pooled: PooledBrowser | None = None
         try:
-            # Get a browser from the pool using timeout context manager
-            try:
-                async with asyncio.timeout(timeout):
-                    pooled = await self._pool.get()
-            except TimeoutError:
-                raise TimeoutError(f"No browser available within {timeout}s") from None
+            pooled = await self._pool.get()
 
             # Mark as in use
             pooled.in_use = True

@@ -11,6 +11,7 @@ No AI at runtime; purely deterministic.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 from ..ir.model import (
@@ -28,6 +29,8 @@ from ..ir.model import (
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # Code generation constants to avoid duplication
 _INDENT = "        "
@@ -420,6 +423,6 @@ def generate_script(
     out_path.write_text(script, encoding="utf-8")
     try:
         out_path.chmod(0o755)
-    except Exception:  # noqa: S110 - chmod may fail on some filesystems
-        pass
+    except OSError as e:
+        logger.debug("chmod failed on %s: %s", out_path, e)
     return out_path

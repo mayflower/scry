@@ -10,6 +10,7 @@ Cookie banner handling uses LLM-based detection (no string matching).
 from __future__ import annotations
 
 import json
+import logging
 import time
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
@@ -37,6 +38,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from playwright.async_api import Browser
+
+logger = logging.getLogger(__name__)
 
 # Confidence threshold for cookie banner dismissal
 COOKIE_CONFIDENCE_THRESHOLD = 0.7
@@ -1187,11 +1190,11 @@ async def _explore_with_browser_tools(
                 screenshots,
             )
 
-            # Capture final HTML - silent failure is ok, we have other HTML captures
+            # Capture final HTML
             try:
                 html_pages.append(await page.content())
-            except Exception:  # noqa: S110
-                pass
+            except Exception as e:
+                logger.debug("Failed to capture final HTML: %s", e)
 
             print(f"[Explorer] Completed with {len(ir_actions)} IR actions")
 

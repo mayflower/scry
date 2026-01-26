@@ -8,10 +8,13 @@ tool_result responses.
 from __future__ import annotations
 
 import base64
+import logging
 from typing import TYPE_CHECKING, Any
 
 from .dom_tree import DOMTreeGenerator
 from .element_refs import ElementReferenceManager
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -208,13 +211,13 @@ class BrowserExecutor:
         if not ref_data:
             return None
 
-        # Try to find by selector - silent failure is intentional, we return None
+        # Try to find by selector
         try:
             element = self.page.query_selector(ref_data.selector)
             if element:
                 return element
-        except Exception:  # noqa: S110
-            pass
+        except Exception as e:
+            logger.debug("Selector query failed for ref %s: %s", ref, e)
 
         return None
 
@@ -328,8 +331,8 @@ class BrowserExecutor:
                     text = element.inner_text()
                     if text:
                         break
-            except Exception:  # noqa: S112 - trying multiple selectors
-                continue
+            except Exception as e:
+                logger.debug("Content selector %s failed: %s", selector, e)
 
         # Normalize whitespace
         text = " ".join(text.split())

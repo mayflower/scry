@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 from ...adapters.anthropic import complete_json, has_api_key
@@ -15,6 +16,7 @@ from ..ir.model import Click, Fill, Navigate, PlanStep, ScrapePlan, Validate, Wa
 if TYPE_CHECKING:
     from ..nav.explore import ExplorationResult
 
+logger = logging.getLogger(__name__)
 
 # --- Optimization Helpers ---
 
@@ -283,7 +285,7 @@ def compress_min_path_with_anthropic(
         out_steps = _parse_compressed_steps(data)
         if out_steps:
             return ScrapePlan(steps=out_steps, notes=str(data.get("notes") or "compressed"))
-    except Exception:  # noqa: S110 - fallback to unoptimized steps on failure
-        pass
+    except Exception as e:
+        logger.debug("Path compression failed, using unoptimized steps: %s", e)
 
     return ScrapePlan(steps=explore.steps, notes="fallback: explored steps")

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
+import sys
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -20,6 +22,7 @@ if TYPE_CHECKING:
     from ...adapters.playwright_explorer import ExplorationResult
     from ..ir.model import ScrapePlan
 
+logger = logging.getLogger(__name__)
 
 # --- Helper Functions ---
 
@@ -42,8 +45,8 @@ def _emit_exploration_progress(
                 "status": "optimizing",
             }
         )
-    except Exception:  # noqa: S110 - progress callback failure shouldn't stop job
-        pass
+    except Exception:
+        logger.debug("Progress callback failed, continuing execution")
 
 
 def _optimize_exploration_path(
@@ -98,7 +101,7 @@ def _synthesize_extraction_selectors(
 def _run_script_once(script_path: Path) -> subprocess.CompletedProcess[str]:
     """Execute generated script and return result."""
     return subprocess.run(
-        ["python", str(script_path)],
+        [sys.executable, str(script_path)],
         check=False,
         capture_output=True,
         text=True,
@@ -280,8 +283,8 @@ def _validate_against_exploration(
                 mismatch = True
                 break
         execution_log.append("validation_ok" if not mismatch else "validation_mismatch")
-    except Exception:  # noqa: S110 - validation failure shouldn't stop result return
-        pass
+    except Exception:
+        logger.debug("Validation comparison failed, skipping validation check")
 
 
 # --- Main Entry Points ---

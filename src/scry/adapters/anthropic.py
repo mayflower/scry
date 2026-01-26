@@ -12,8 +12,11 @@ Browser automation support follows the claude-quickstarts/browser-use-demo appro
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # Browser Tool configuration (following browser-use-demo approach)
 # Uses standard messages API with custom tool definition, NOT beta browser tools API
@@ -134,20 +137,24 @@ def _client():
 
 
 def _extract_json(text: str) -> dict[str, Any]:
-    # Best-effort JSON extraction - silent failures are intentional as we try multiple strategies
+    """Best-effort JSON extraction using multiple strategies."""
+    # Strategy 1: Direct parse
     try:
         return json.loads(text)
-    except Exception:  # noqa: S110
-        pass
+    except json.JSONDecodeError:
+        logger.debug("Direct JSON parse failed, trying brace extraction")
+
+    # Strategy 2: Extract content between outermost braces
     start = text.find("{")
     end = text.rfind("}")
     if start != -1 and end != -1 and end > start:
         snippet = text[start : end + 1]
         try:
             return json.loads(snippet)
-        except Exception:  # noqa: S110
-            pass
-    # Try code fence blocks
+        except json.JSONDecodeError:
+            logger.debug("Brace extraction failed, trying code fence extraction")
+
+    # Strategy 3: Extract from code fence blocks
     if "```" in text:
         parts = text.split("```")
         for i in range(1, len(parts), 2):
@@ -156,8 +163,9 @@ def _extract_json(text: str) -> dict[str, Any]:
                 candidate = candidate[candidate.find("\n") + 1 :]
             try:
                 return json.loads(candidate)
-            except Exception:  # noqa: S112
-                continue
+            except json.JSONDecodeError:
+                logger.debug("Code fence block %d failed to parse", i)
+
     raise ValueError("Failed to parse JSON from Claude response")
 
 
