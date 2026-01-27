@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Union
 
 
 @dataclass
@@ -71,9 +70,7 @@ class Upload:
     file_path: str  # Path to file to upload
 
 
-PlanStep = Union[
-    Navigate, Click, Fill, WaitFor, Validate, Select, Hover, KeyPress, Upload
-]
+PlanStep = Navigate | Click | Fill | WaitFor | Validate | Select | Hover | KeyPress | Upload
 
 
 @dataclass

@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 
 from .api.dto import ScrapeRequest
 from .core.executor.runner import run_job, run_job_with_id
 from .runtime.events import get_bus
+
+logger = logging.getLogger(__name__)
 
 
 def _worker_loop() -> None:
@@ -25,8 +28,7 @@ def _worker_loop() -> None:
                 result = asyncio.run(run_job(req))
             bus.set_result(result.job_id, json.loads(result.model_dump_json()))
         except Exception:
-            # Swallow and continue (no logs per constraints)
-            continue
+            logger.exception("Worker job failed for message: %s", msg.get("job_id", "unknown"))
 
 
 def main() -> None:

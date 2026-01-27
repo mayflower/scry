@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from playwright.sync_api import sync_playwright
+
 from scry.api.dto import ScrapeRequest  # type: ignore
 from scry.core.executor.runner import run_job_with_id  # type: ignore
 
@@ -145,9 +146,7 @@ def test_upload_action_playwright(tmp_path: Path):
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(
-    not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY"
-)
+@pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY")
 def test_select_in_exploration():
     """Test that LLM can use Select action during exploration."""
     html = """
@@ -195,9 +194,7 @@ def test_select_in_exploration():
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(
-    not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY"
-)
+@pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY")
 def test_hover_in_exploration():
     """Test that LLM can use Hover action during exploration."""
     html = """

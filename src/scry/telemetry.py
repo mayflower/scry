@@ -48,12 +48,8 @@ def init_telemetry() -> None:
         resource = Resource.create(
             {
                 ResourceAttributes.SERVICE_NAME: OTEL_SERVICE_NAME,
-                ResourceAttributes.DEPLOYMENT_ENVIRONMENT: os.getenv(
-                    "ENVIRONMENT", "development"
-                ),
-                ResourceAttributes.SERVICE_VERSION: os.getenv(
-                    "APP_VERSION", "unknown"
-                ),
+                ResourceAttributes.DEPLOYMENT_ENVIRONMENT: os.getenv("ENVIRONMENT", "development"),
+                ResourceAttributes.SERVICE_VERSION: os.getenv("APP_VERSION", "unknown"),
             }
         )
 

@@ -11,7 +11,7 @@ Additional heuristics provide context hints to the LLM:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -24,10 +24,6 @@ class RefManagerProtocol(Protocol):
     def get_ref(self, ref_id: str) -> object | None:
         """Get reference data for a ref_id. Returns object with .selector or None."""
         ...
-
-
-if TYPE_CHECKING:
-    pass
 
 
 @dataclass
@@ -173,7 +169,7 @@ def detect_cookie_banner(
         if dismiss_ref and ref_manager:
             ref_data = ref_manager.get_ref(dismiss_ref)
             if ref_data and hasattr(ref_data, "selector"):
-                dismiss_selector = getattr(ref_data, "selector")
+                dismiss_selector = ref_data.selector
 
         print(
             f"[Cookie] Detection result: has_banner={has_banner}, "

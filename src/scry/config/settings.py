@@ -17,9 +17,7 @@ class Settings:
     headless: bool = _env_bool("HEADLESS", True)
     nav_backend: str = os.getenv("NAV_BACKEND", "browser_use")  # browser_use|playwright
     screenshot_dir: str = os.getenv("SCREENSHOT_DIR", "artifacts/screenshots")
-    generated_code_dir: str = os.getenv(
-        "GENERATED_CODE_DIR", "artifacts/generated_code"
-    )
+    generated_code_dir: str = os.getenv("GENERATED_CODE_DIR", "artifacts/generated_code")
     html_snapshots_dir: str = os.getenv("HTML_SNAPSHOTS_DIR", "artifacts/html")
     event_backend: str = os.getenv("EVENT_BACKEND", "inmemory")
     redis_url: str | None = os.getenv("REDIS_URL")

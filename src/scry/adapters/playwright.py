@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from playwright.sync_api import sync_playwright
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def take_screenshot(
