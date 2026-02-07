@@ -9,6 +9,7 @@ Cookie banner handling uses LLM-based detection (no string matching).
 
 from __future__ import annotations
 
+import base64 as b64
 import json
 import logging
 import time
@@ -479,8 +480,8 @@ async def _capture_exploration_state(
     screenshots: list[Path],
     urls: list[str],
     html_pages: list[str],
-) -> None:
-    """Capture state after an exploration action."""
+) -> bytes:
+    """Capture state after an exploration action. Returns screenshot bytes."""
     await page.wait_for_timeout(1000)
 
     screenshot_path = screenshots_dir / f"exploration-step-{step}-{job_id}.png"
@@ -495,6 +496,8 @@ async def _capture_exploration_state(
     html_content = await page.content()
     html_pages.append(html_content)
 
+    return screenshot_bytes
+
 
 async def _explore_with_complete_json(
     start_url: str,
@@ -506,6 +509,7 @@ async def _explore_with_complete_json(
     max_steps: int,
     headless: bool,
     login_params: dict[str, Any] | None,
+    progress_callback: Any | None = None,
 ) -> ExplorationResult:
     """Async exploration using complete_json API for LLM decisions."""
 
@@ -557,6 +561,19 @@ async def _explore_with_complete_json(
             screenshot_path.write_bytes(screenshot_bytes)
             screenshots.append(screenshot_path)
 
+            if progress_callback:
+                try:
+                    progress_callback({
+                        "step": 0,
+                        "max_steps": max_steps,
+                        "action": "navigated",
+                        "url": start_url,
+                        "status": "exploring",
+                        "screenshot_b64": b64.b64encode(screenshot_bytes).decode(),
+                    })
+                except Exception:
+                    logger.debug("Progress callback failed at step 0")
+
             # Exploration loop
             for step in range(1, max_steps + 1):
                 print(f"[Explorer] Step {step}/{max_steps}")
@@ -583,9 +600,22 @@ async def _explore_with_complete_json(
                     if result == "continue":
                         continue
 
-                    await _capture_exploration_state(
+                    step_screenshot = await _capture_exploration_state(
                         page, step, job_id, screenshots_dir, screenshots, urls, html_pages
                     )
+
+                    if progress_callback:
+                        try:
+                            progress_callback({
+                                "step": step,
+                                "max_steps": max_steps,
+                                "action": action.get("action", "exploring"),
+                                "url": page.url,
+                                "status": "exploring",
+                                "screenshot_b64": b64.b64encode(step_screenshot).decode(),
+                            })
+                        except Exception:
+                            logger.debug("Progress callback failed at step %d", step)
 
                 except Exception as e:
                     print(f"[Explorer] Action failed: {e}")
@@ -1093,6 +1123,7 @@ async def _run_exploration_loop(
     ir_actions: list[Any],
     urls: list[str],
     screenshots: list[Path],
+    progress_callback: Any | None = None,
 ) -> None:
     """Run the main exploration loop."""
     for iteration in range(max_steps):
@@ -1115,6 +1146,7 @@ async def _run_exploration_loop(
             print("[Explorer] Agent finished")
             break
 
+        prev_screenshot_count = len(screenshots)
         tool_results = await _execute_all_tool_blocks(
             response,
             page,
@@ -1126,6 +1158,20 @@ async def _run_exploration_loop(
             urls,
             screenshots,
         )
+
+        if progress_callback and len(screenshots) > prev_screenshot_count:
+            latest = screenshots[-1]
+            try:
+                progress_callback({
+                    "step": iteration + 1,
+                    "max_steps": max_steps,
+                    "action": "browser_action",
+                    "url": page.url,
+                    "status": "exploring",
+                    "screenshot_b64": b64.b64encode(latest.read_bytes()).decode(),
+                })
+            except Exception:
+                logger.debug("Progress callback failed at iteration %d", iteration)
 
         if tool_results:
             messages.append({"role": "user", "content": tool_results})
@@ -1141,6 +1187,7 @@ async def _explore_with_browser_tools(
     max_steps: int,
     headless: bool,
     login_params: dict[str, Any] | None,
+    progress_callback: Any | None = None,
 ) -> ExplorationResult:
     """Exploration using browser tools with standard messages API.
 
@@ -1188,6 +1235,7 @@ async def _explore_with_browser_tools(
                 ir_actions,
                 urls,
                 screenshots,
+                progress_callback,
             )
 
             # Capture final HTML
@@ -1235,10 +1283,8 @@ async def explore_with_playwright(
     Cookie banners are handled via LLM-based detection (no string matching).
 
     Args:
-        progress_callback: Reserved for future progress reporting (not yet implemented)
+        progress_callback: Callable for emitting real-time progress with screenshots.
     """
-    _ = progress_callback  # Reserved for future use
-
     print(f"[Explorer] Starting exploration for job {job_id}")
     print(f"[Explorer] Target: {start_url}")
     print(f"[Explorer] Task: {nl_request}")
@@ -1265,6 +1311,7 @@ async def explore_with_playwright(
             max_steps=max_steps,
             headless=headless,
             login_params=login_params,
+            progress_callback=progress_callback,
         )
     else:
         print("[Explorer] Using async Playwright with complete_json API")
@@ -1278,4 +1325,5 @@ async def explore_with_playwright(
             max_steps=max_steps,
             headless=headless,
             login_params=login_params,
+            progress_callback=progress_callback,
         )

@@ -194,12 +194,25 @@ def _execute_with_self_healing(
     artifacts_root: Path,
     extraction_spec: dict[str, Any],
     execution_log: list[str],
+    progress_callback: Any | None = None,
+    max_exploration_steps: int = 20,
 ) -> None:
     """Execute generated script with self-healing retry loop."""
     options: dict[str, Any] = {"extraction_spec": extraction_spec}
 
     for attempt in range(max(1, settings.max_repair_attempts)):
         execution_log.append("codegen" if attempt == 0 else f"repair_attempt_{attempt}")
+
+        if progress_callback:
+            try:
+                progress_callback({
+                    "step": max_exploration_steps + attempt + 1,
+                    "max_steps": max_exploration_steps + 5,
+                    "action": "codegen" if attempt == 0 else f"repair_attempt_{attempt}",
+                    "status": "executing",
+                })
+            except Exception:
+                logger.debug("Progress callback failed during codegen attempt %d", attempt)
 
         script_path = generate_script(
             opt, job_id, artifacts_root, settings.headless, options=options
@@ -349,9 +362,24 @@ async def run_job_with_id(
     )
 
     # Execute with self-healing
-    _execute_with_self_healing(opt, job_id, artifacts_root, extraction_spec, execution_log)
+    _execute_with_self_healing(
+        opt, job_id, artifacts_root, extraction_spec, execution_log,
+        progress_callback=progress_callback,
+        max_exploration_steps=max_exploration_steps,
+    )
 
     # Extract final data
+    if progress_callback:
+        try:
+            progress_callback({
+                "step": max_exploration_steps + 4,
+                "max_steps": max_exploration_steps + 5,
+                "action": "extracting_data",
+                "status": "extracting",
+            })
+        except Exception:
+            logger.debug("Progress callback failed during extraction")
+
     execution_log.append("extracting")
     data = _load_extracted_data(artifacts_root, job_id, req)
 
