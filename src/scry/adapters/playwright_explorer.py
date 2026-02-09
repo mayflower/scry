@@ -499,6 +499,74 @@ async def _capture_exploration_state(
     return screenshot_bytes
 
 
+def _notify_exploration_progress(
+    progress_callback: Any | None, payload: dict[str, Any], context: str
+) -> None:
+    """Safely invoke a progress callback, logging any errors."""
+    if not progress_callback:
+        return
+    try:
+        progress_callback(payload)
+    except Exception:
+        logger.debug("Progress callback failed at %s", context)
+
+
+async def _run_exploration_step(
+    page: Page,
+    step: int,
+    max_steps: int,
+    nl_request: str,
+    schema: dict[str, Any],
+    urls: list[str],
+    login_params: dict[str, Any] | None,
+    actions: list[Any],
+    target_domain: str,
+    job_id: str,
+    screenshots_dir: Path,
+    screenshots: list[Path],
+    html_pages: list[str],
+    progress_callback: Any | None,
+) -> str:
+    """Execute a single exploration step. Returns 'break', 'continue', or 'ok'."""
+    page_state = await _get_page_state(page)
+
+    action = _decide_next_action(
+        page_state, nl_request, schema, urls, step, max_steps, login_params
+    )
+
+    if not action or action.get("action") == "done":
+        print(f"[Explorer] Agent decided to stop at step {step}")
+        return "break"
+
+    print(f"[Explorer] Action: {action.get('action', '')}")
+
+    result = await _execute_exploration_action(page, action, actions, urls, target_domain)
+    if result == "break":
+        print(f"[Explorer] Extracting data at step {step}")
+        return "break"
+    if result == "continue":
+        return "continue"
+
+    step_screenshot = await _capture_exploration_state(
+        page, step, job_id, screenshots_dir, screenshots, urls, html_pages
+    )
+
+    _notify_exploration_progress(
+        progress_callback,
+        {
+            "step": step,
+            "max_steps": max_steps,
+            "action": action.get("action", "exploring"),
+            "url": page.url,
+            "status": "exploring",
+            "screenshot_b64": b64.b64encode(step_screenshot).decode(),
+        },
+        f"step {step}",
+    )
+
+    return "ok"
+
+
 async def _explore_with_complete_json(
     start_url: str,
     nl_request: str,
@@ -561,65 +629,44 @@ async def _explore_with_complete_json(
             screenshot_path.write_bytes(screenshot_bytes)
             screenshots.append(screenshot_path)
 
-            if progress_callback:
-                try:
-                    progress_callback({
-                        "step": 0,
-                        "max_steps": max_steps,
-                        "action": "navigated",
-                        "url": start_url,
-                        "status": "exploring",
-                        "screenshot_b64": b64.b64encode(screenshot_bytes).decode(),
-                    })
-                except Exception:
-                    logger.debug("Progress callback failed at step 0")
+            _notify_exploration_progress(
+                progress_callback,
+                {
+                    "step": 0,
+                    "max_steps": max_steps,
+                    "action": "navigated",
+                    "url": start_url,
+                    "status": "exploring",
+                    "screenshot_b64": b64.b64encode(screenshot_bytes).decode(),
+                },
+                "step 0",
+            )
 
             # Exploration loop
             for step in range(1, max_steps + 1):
                 print(f"[Explorer] Step {step}/{max_steps}")
-
-                page_state = await _get_page_state(page)
-
-                action = _decide_next_action(
-                    page_state, nl_request, schema, urls, step, max_steps, login_params
-                )
-
-                if not action or action.get("action") == "done":
-                    print(f"[Explorer] Agent decided to stop at step {step}")
-                    break
-
-                print(f"[Explorer] Action: {action.get('action', '')}")
-
                 try:
-                    result = await _execute_exploration_action(
-                        page, action, actions, urls, target_domain
+                    result = await _run_exploration_step(
+                        page,
+                        step,
+                        max_steps,
+                        nl_request,
+                        schema,
+                        urls,
+                        login_params,
+                        actions,
+                        target_domain,
+                        job_id,
+                        screenshots_dir,
+                        screenshots,
+                        html_pages,
+                        progress_callback,
                     )
-                    if result == "break":
-                        print(f"[Explorer] Extracting data at step {step}")
-                        break
-                    if result == "continue":
-                        continue
-
-                    step_screenshot = await _capture_exploration_state(
-                        page, step, job_id, screenshots_dir, screenshots, urls, html_pages
-                    )
-
-                    if progress_callback:
-                        try:
-                            progress_callback({
-                                "step": step,
-                                "max_steps": max_steps,
-                                "action": action.get("action", "exploring"),
-                                "url": page.url,
-                                "status": "exploring",
-                                "screenshot_b64": b64.b64encode(step_screenshot).decode(),
-                            })
-                        except Exception:
-                            logger.debug("Progress callback failed at step %d", step)
-
                 except Exception as e:
                     print(f"[Explorer] Action failed: {e}")
                     continue
+                if result == "break":
+                    break
 
             # Capture final HTML
             if not html_pages:
@@ -1147,6 +1194,7 @@ async def _run_exploration_loop(
             break
 
         prev_screenshot_count = len(screenshots)
+
         tool_results = await _execute_all_tool_blocks(
             response,
             page,
@@ -1159,17 +1207,21 @@ async def _run_exploration_loop(
             screenshots,
         )
 
+        # Emit progress with latest screenshot if new ones were captured
         if progress_callback and len(screenshots) > prev_screenshot_count:
-            latest = screenshots[-1]
             try:
-                progress_callback({
-                    "step": iteration + 1,
-                    "max_steps": max_steps,
-                    "action": "browser_action",
-                    "url": page.url,
-                    "status": "exploring",
-                    "screenshot_b64": b64.b64encode(latest.read_bytes()).decode(),
-                })
+                latest = screenshots[-1]
+                screenshot_b64 = b64.b64encode(latest.read_bytes()).decode()
+                progress_callback(
+                    {
+                        "step": iteration + 1,
+                        "max_steps": max_steps,
+                        "action": "browser_action",
+                        "url": page.url,
+                        "status": "exploring",
+                        "screenshot_b64": screenshot_b64,
+                    }
+                )
             except Exception:
                 logger.debug("Progress callback failed at iteration %d", iteration)
 
@@ -1235,7 +1287,7 @@ async def _explore_with_browser_tools(
                 ir_actions,
                 urls,
                 screenshots,
-                progress_callback,
+                progress_callback=progress_callback,
             )
 
             # Capture final HTML
@@ -1283,7 +1335,7 @@ async def explore_with_playwright(
     Cookie banners are handled via LLM-based detection (no string matching).
 
     Args:
-        progress_callback: Callable for emitting real-time progress with screenshots.
+        progress_callback: Optional callback for real-time progress with screenshots.
     """
     print(f"[Explorer] Starting exploration for job {job_id}")
     print(f"[Explorer] Target: {start_url}")

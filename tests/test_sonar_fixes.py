@@ -544,3 +544,63 @@ class TestRunnerHelperFunctions:
         assert should_retry is False
         assert error_msg is None
         assert "script_failed" in execution_log
+
+
+class TestNotifyProgress:
+    """Tests for _notify_progress helper in runner.py."""
+
+    def test_notify_progress_calls_callback(self):
+        """Should call the callback with the payload."""
+        from unittest.mock import MagicMock
+
+        from scry.core.executor.runner import _notify_progress
+
+        callback = MagicMock()
+        payload = {"step": 1, "status": "ok"}
+        _notify_progress(callback, payload, "test")
+        callback.assert_called_once_with(payload)
+
+    def test_notify_progress_none_callback(self):
+        """Should do nothing when callback is None."""
+        from scry.core.executor.runner import _notify_progress
+
+        _notify_progress(None, {"step": 1}, "test")  # Should not raise
+
+    def test_notify_progress_swallows_exception(self):
+        """Should catch and log exceptions from the callback."""
+        from unittest.mock import MagicMock
+
+        from scry.core.executor.runner import _notify_progress
+
+        callback = MagicMock(side_effect=RuntimeError("callback failed"))
+        _notify_progress(callback, {"step": 1}, "test")  # Should not raise
+
+
+class TestNotifyExplorationProgress:
+    """Tests for _notify_exploration_progress helper in playwright_explorer.py."""
+
+    def test_notify_exploration_progress_calls_callback(self):
+        """Should call the callback with the payload."""
+        from unittest.mock import MagicMock
+
+        from scry.adapters.playwright_explorer import _notify_exploration_progress
+
+        callback = MagicMock()
+        payload = {"step": 0, "action": "navigated"}
+        _notify_exploration_progress(callback, payload, "step 0")
+        callback.assert_called_once_with(payload)
+
+    def test_notify_exploration_progress_none_callback(self):
+        """Should do nothing when callback is None."""
+        from scry.adapters.playwright_explorer import _notify_exploration_progress
+
+        _notify_exploration_progress(None, {"step": 0}, "step 0")
+
+    def test_notify_exploration_progress_swallows_exception(self):
+        """Should catch and log exceptions from the callback."""
+        from unittest.mock import MagicMock
+
+        from scry.adapters.playwright_explorer import _notify_exploration_progress
+
+        callback = MagicMock(side_effect=ValueError("broken"))
+        _notify_exploration_progress(callback, {"step": 1}, "step 1")
