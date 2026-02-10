@@ -21,6 +21,7 @@ e2e = pytest.mark.e2e
 
 
 @e2e
+@pytest.mark.integration
 @pytest.mark.asyncio
 @pytest.mark.skipif(
     not os.getenv("ANTHROPIC_API_KEY"),

@@ -51,9 +51,16 @@ python_classes = "Test*"
 python_functions = "test_*"
 # SonarQube-compatible output (junit.xml and coverage.xml)
 # Usage: pytest --junitxml=junit.xml --cov=src/scry --cov-report=xml
-addopts = "--junitxml=junit.xml"
+addopts = "-ra --junitxml=junit.xml"
+norecursedirs = ["artifacts", ".pytest_cache", "build", "dist"]
 markers = [
-    "integration: marks tests that require external services",
+    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+    "v1: marks tests for V1 - Minimal Vertical Slice",
+    "v2: marks tests for V2 - Planning + Exploration",
+    "smoke: marks tests as smoke tests",
+    "e2e: marks tests as end-to-end tests",
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "minimal: marks tests as minimal implementation tests",
 ]
 
 [tool.coverage.run]
