@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from scry.api.dto import ScrapeRequest
 from scry.config.settings import settings
 from scry.core.executor.runner import run_job, run_job_with_id
@@ -22,7 +23,7 @@ class TestUnifiedImplementation:
     """Test suite for the unified scraping implementation."""
 
     @pytest.mark.integration
-    def test_basic_extraction(self):
+    async def test_basic_extraction(self):
         """Test basic data extraction with simple HTML."""
         html = """
         <html>
@@ -50,7 +51,7 @@ class TestUnifiedImplementation:
             target_urls=[url],
         )
 
-        res = run_job(req)
+        res = await run_job(req)
 
         # Verify response structure
         assert res.job_id is not None
@@ -64,7 +65,7 @@ class TestUnifiedImplementation:
         assert "$99.99" in res.data.get("price", "")
 
     @pytest.mark.integration
-    def test_exploration_phase(self):
+    async def test_exploration_phase(self):
         """Test that exploration with native exploration agent works."""
         html = """
         <html>
@@ -105,7 +106,7 @@ class TestUnifiedImplementation:
             target_urls=[url],
         )
 
-        res = run_job(req)
+        res = await run_job(req)
 
         # Check execution log for exploration
         assert "exploring" in res.execution_log
@@ -117,7 +118,7 @@ class TestUnifiedImplementation:
             assert isinstance(res.data["products"], list)
 
     @pytest.mark.integration
-    def test_code_generation(self):
+    async def test_code_generation(self):
         """Test that Playwright code is generated from exploration."""
         html = "<html><body><h1>Code Gen Test</h1></body></html>"
         url = f"data:text/html,{html}"
@@ -131,16 +132,14 @@ class TestUnifiedImplementation:
             target_urls=[url],
         )
 
-        res = run_job(req)
+        res = await run_job(req)
 
         # Check execution log for code generation
         assert "codegen" in res.execution_log
         assert "executing_script" in res.execution_log
 
         # Check that generated code artifact exists
-        code_path = (
-            Path(settings.artifacts_root) / "generated_code" / f"{res.job_id}.py"
-        )
+        code_path = Path(settings.artifacts_root) / "generated_code" / f"{res.job_id}.py"
         assert code_path.exists(), f"Generated code not found at {code_path}"
 
         # Verify the generated code is valid Python
@@ -149,7 +148,7 @@ class TestUnifiedImplementation:
         assert "def main():" in code_content
 
     @pytest.mark.integration
-    def test_artifacts_creation(self):
+    async def test_artifacts_creation(self):
         """Test that all expected artifacts are created."""
         html = """
         <html>
@@ -174,7 +173,7 @@ class TestUnifiedImplementation:
             target_urls=[url],
         )
 
-        res = run_job(req)
+        res = await run_job(req)
         job_id = res.job_id
         artifacts_root = Path(settings.artifacts_root)
 
@@ -194,7 +193,7 @@ class TestUnifiedImplementation:
         assert len(html_files) > 0, "No HTML snapshots saved"
 
     @pytest.mark.integration
-    def test_execution_log_completeness(self):
+    async def test_execution_log_completeness(self):
         """Test that execution log contains all expected steps."""
         html = "<html><body><h1>Log Test</h1></body></html>"
         url = f"data:text/html,{html}"
@@ -208,7 +207,7 @@ class TestUnifiedImplementation:
             target_urls=[url],
         )
 
-        res = run_job(req)
+        res = await run_job(req)
 
         # Check for all expected log entries
         expected_entries = [
@@ -225,12 +224,10 @@ class TestUnifiedImplementation:
             assert entry in res.execution_log, f"Missing log entry: {entry}"
 
         # Should have either optimizing or path_compressed
-        assert (
-            "optimizing" in res.execution_log or "path_compressed" in res.execution_log
-        )
+        assert "optimizing" in res.execution_log or "path_compressed" in res.execution_log
 
     @pytest.mark.integration
-    def test_schema_validation(self):
+    async def test_schema_validation(self):
         """Test that extracted data conforms to the provided schema."""
         html = """
         <html>
@@ -259,7 +256,7 @@ class TestUnifiedImplementation:
             target_urls=[url],
         )
 
-        res = run_job(req)
+        res = await run_job(req)
 
         # Check data was extracted
         assert isinstance(res.data, dict)
@@ -273,7 +270,7 @@ class TestUnifiedImplementation:
             assert isinstance(res.data["price"], (int, float, type(None)))
 
     @pytest.mark.integration
-    def test_no_target_url_handling(self):
+    async def test_no_target_url_handling(self):
         """Test handling when no target URL is provided."""
         req = ScrapeRequest(
             nl_request="Extract data",
@@ -284,7 +281,7 @@ class TestUnifiedImplementation:
             target_urls=[],  # No URLs
         )
 
-        res = run_job(req)
+        res = await run_job(req)
 
         # Should handle gracefully
         assert res.status == "completed"
@@ -293,7 +290,7 @@ class TestUnifiedImplementation:
         assert "done" in res.execution_log
 
     @pytest.mark.integration
-    def test_complex_schema_extraction(self):
+    async def test_complex_schema_extraction(self):
         """Test extraction with complex nested schema."""
         html = """
         <html>
@@ -341,7 +338,7 @@ class TestUnifiedImplementation:
             target_urls=[url],
         )
 
-        res = run_job(req)
+        res = await run_job(req)
 
         # Check extraction worked
         assert res.status == "completed"
@@ -355,7 +352,7 @@ class TestUnifiedImplementation:
 
     @pytest.mark.integration
     @pytest.mark.slow
-    def test_self_healing_retry(self):
+    async def test_self_healing_retry(self):
         """Test self-healing retry logic on failure."""
         # This test would need a way to simulate failure and retry
         # For now, just test that the retry mechanism is in place
@@ -372,7 +369,7 @@ class TestUnifiedImplementation:
         )
 
         # The self-healing loop should handle any issues
-        res = run_job(req)
+        res = await run_job(req)
 
         # Should complete successfully even with potential issues
         assert res.status == "completed"
@@ -384,7 +381,7 @@ class TestUnifiedImplementation:
             assert len(repair_logs) <= 20  # Max 20 repair attempts
 
     @pytest.mark.integration
-    def test_job_with_id(self):
+    async def test_job_with_id(self):
         """Test running job with specific ID."""
         import uuid
 
@@ -401,7 +398,7 @@ class TestUnifiedImplementation:
             target_urls=[url],
         )
 
-        res = run_job_with_id(job_id, req)
+        res = await run_job_with_id(job_id, req)
 
         # Should use the provided ID
         assert res.job_id == job_id
@@ -417,7 +414,7 @@ class TestDataExtraction:
     """Test suite specifically for data extraction capabilities."""
 
     @pytest.mark.integration
-    def test_extract_multiple_items(self):
+    async def test_extract_multiple_items(self):
         """Test extracting multiple items from a list."""
         html = """
         <html>
@@ -461,7 +458,7 @@ class TestDataExtraction:
             target_urls=[url],
         )
 
-        res = run_job(req)
+        res = await run_job(req)
 
         # Should extract array of products
         assert res.status == "completed"
@@ -474,7 +471,7 @@ class TestDataExtraction:
                 assert "name" in products[0] or "price" in products[0]
 
     @pytest.mark.integration
-    def test_extract_with_missing_fields(self):
+    async def test_extract_with_missing_fields(self):
         """Test extraction when some fields are missing."""
         html = """
         <html>
@@ -501,7 +498,7 @@ class TestDataExtraction:
             target_urls=[url],
         )
 
-        res = run_job(req)
+        res = await run_job(req)
 
         # Should complete successfully
         assert res.status == "completed"
@@ -516,7 +513,7 @@ class TestErrorHandling:
     """Test suite for error handling and edge cases."""
 
     @pytest.mark.integration
-    def test_invalid_url_format(self):
+    async def test_invalid_url_format(self):
         """Test handling of invalid URL formats."""
         req = ScrapeRequest(
             nl_request="Extract data",
@@ -529,12 +526,12 @@ class TestErrorHandling:
 
         # Should handle gracefully - native exploration will try to navigate
         # but the exploration will adapt
-        res = run_job(req)
+        res = await run_job(req)
         assert res.job_id is not None
         # May fail or return empty data depending on native exploration handling
 
     @pytest.mark.integration
-    def test_empty_html_page(self):
+    async def test_empty_html_page(self):
         """Test extraction from empty HTML."""
         url = "data:text/html,<html><body></body></html>"
 
@@ -547,7 +544,7 @@ class TestErrorHandling:
             target_urls=[url],
         )
 
-        res = run_job(req)
+        res = await run_job(req)
 
         # Should complete but with empty or minimal data
         assert res.status == "completed"

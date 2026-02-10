@@ -9,9 +9,7 @@ from __future__ import annotations
 import re
 
 
-def make_resilient_selector(
-    selector: str, element_html: str | None = None
-) -> list[str]:
+def make_resilient_selector(selector: str, element_html: str | None = None) -> list[str]:
     """Generate multiple fallback selectors for resilience.
 
     Args:
@@ -153,9 +151,10 @@ def improve_selector_resilience(selector: str) -> str:
         return selector
 
     # Remove brittle position-based selectors
+    # Use re.sub for pattern with variable digits, str.replace for fixed strings
     selector = re.sub(r":nth-child\(\d+\)", "", selector)
-    selector = re.sub(r":first-child", "", selector)
-    selector = re.sub(r":last-child", "", selector)
+    selector = selector.replace(":first-child", "")
+    selector = selector.replace(":last-child", "")
 
     # Simplify overly specific selectors
     if selector.count(" ") > 3:

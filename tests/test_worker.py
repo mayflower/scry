@@ -7,6 +7,7 @@ import time
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from scry.api.dto import ScrapeRequest, ScrapeResponse
 from scry.runtime.events import InMemoryBus
 from scry.worker import _worker_loop, main

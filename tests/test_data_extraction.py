@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from scry.core.extractor.extract import extract_data
 
 
@@ -112,10 +113,7 @@ class TestDataExtraction:
             assert len(result["features"]) > 0
             # Check if any feature was extracted
             features_text = " ".join(str(f) for f in result["features"])
-            assert (
-                "shipping" in features_text.lower()
-                or "quality" in features_text.lower()
-            )
+            assert "shipping" in features_text.lower() or "quality" in features_text.lower()
 
         if "tags" in result:
             assert isinstance(result["tags"], list)
@@ -213,9 +211,7 @@ class TestDataExtraction:
         # Should use first page
         result = extract_data(schema, [html1, html2])
 
-        assert "Page 1" in result.get("title", "") or "First" in result.get(
-            "heading", ""
-        )
+        assert "Page 1" in result.get("title", "") or "First" in result.get("heading", "")
 
     def test_extract_with_base_url(self):
         """Test URL resolution with base URL."""
@@ -375,10 +371,7 @@ class TestDataExtraction:
 
         if "features" in result and isinstance(result["features"], list):
             features_text = " ".join(str(f) for f in result["features"])
-            assert (
-                "battery" in features_text.lower()
-                or "bluetooth" in features_text.lower()
-            )
+            assert "battery" in features_text.lower() or "bluetooth" in features_text.lower()
 
 
 if __name__ == "__main__":

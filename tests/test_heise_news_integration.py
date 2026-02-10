@@ -10,15 +10,14 @@ This tests the complete pipeline with:
 import os
 
 import pytest
+
 from scry.api.dto import ScrapeRequest
 from scry.core.executor.runner import run_job_with_id
 
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY"
-)
+@pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY")
 async def test_heise_news_extraction():
     """Extract the last 3 news items from heise.de.
 
@@ -61,15 +60,13 @@ async def test_heise_news_extraction():
     print(f"\nExtracted data: {result.data}")
 
     # Verify pipeline completed
-    assert any(
-        "exploring" in log.lower() for log in result.execution_log
-    ), "Should have exploration phase"
-    assert any(
-        "exploration_complete" in log.lower() for log in result.execution_log
-    ), "Exploration should complete"
-    assert any(
-        "done" in log.lower() for log in result.execution_log
-    ), "Pipeline should finish"
+    assert any("exploring" in log.lower() for log in result.execution_log), (
+        "Should have exploration phase"
+    )
+    assert any("exploration_complete" in log.lower() for log in result.execution_log), (
+        "Exploration should complete"
+    )
+    assert any("done" in log.lower() for log in result.execution_log), "Pipeline should finish"
 
     # Verify data structure
     assert result.data is not None, "Should extract some data"
@@ -93,9 +90,9 @@ async def test_heise_news_extraction():
         # Verify first item has required fields
         if len(news_items) > 0:
             first_item = news_items[0]
-            assert (
-                "title" in first_item or "link" in first_item
-            ), "News items should have title or link"
+            assert "title" in first_item or "link" in first_item, (
+                "News items should have title or link"
+            )
 
     print("\n" + "=" * 70)
     print("✅ REAL-WORLD INTEGRATION TEST PASSED")

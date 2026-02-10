@@ -3,15 +3,14 @@
 import os
 
 import pytest
+
 from scry.api.dto import ScrapeRequest  # type: ignore
 from scry.core.executor.runner import run_job_with_id  # type: ignore
 
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY"
-)
+@pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY")
 async def test_llm_detects_and_fills_login():
     """Test LLM detects login form and fills it automatically.
 
@@ -52,9 +51,7 @@ async def test_llm_detects_and_fills_login():
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY"
-)
+@pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY")
 async def test_login_not_triggered_without_credentials():
     """Test that no login happens when credentials not provided."""
     os.environ["MAX_EXPLORATION_STEPS"] = "5"

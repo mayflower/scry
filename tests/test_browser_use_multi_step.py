@@ -5,15 +5,14 @@ from __future__ import annotations
 import os
 
 import pytest
+
 from scry.api.dto import ScrapeRequest
 from scry.core.executor.runner import run_job
 
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY"
-)
+@pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY")
 async def test_native_exploration_multi_step_navigation():
     """Test native exploration with a complex navigation scenario requiring at least 5 steps.
 
@@ -121,9 +120,7 @@ async def test_native_exploration_multi_step_navigation():
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY"
-)
+@pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY")
 async def test_native_exploration_form_interaction():
     """Test native exploration with form filling and submission requiring multiple steps.
 

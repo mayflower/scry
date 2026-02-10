@@ -15,17 +15,19 @@ import json
 import logging
 import os
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastmcp import Context, FastMCP
-
-# Configure logging to show INFO level (required for telemetry messages)
-logging.basicConfig(level=logging.INFO)
-from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from .api.dto import ScrapeRequest
 from .core.executor.runner import run_job_with_id
+
+if TYPE_CHECKING:
+    from starlette.requests import Request
+
+# Configure logging to show INFO level (required for telemetry messages)
+logging.basicConfig(level=logging.INFO)
 
 mcp = FastMCP(name="scry-browser")
 
@@ -34,6 +36,24 @@ mcp = FastMCP(name="scry-browser")
 async def health_check(request: Request) -> JSONResponse:  # noqa: ARG001
     """Health check endpoint for Kubernetes probes."""
     return JSONResponse({"status": "healthy", "service": "scry-mcp"})
+
+
+def _build_login_params(username: str | None, password: str | None) -> dict[str, str] | None:
+    """Build login params dict if credentials are provided."""
+    if username and password:
+        return {"username": username, "password": password}
+    return None
+
+
+def _build_result_text_parts(result: Any) -> list[str]:
+    """Build text content parts from scrape result."""
+    parts = [
+        f"Browser task completed (job: {result.job_id}, status: {result.status})",
+        f"Execution: {' → '.join(result.execution_log)}",
+    ]
+    if result.data:
+        parts.append(f"\nExtracted data:\n```json\n{json.dumps(result.data, indent=2)}\n```")
+    return parts
 
 
 @mcp.tool
@@ -74,21 +94,18 @@ async def browser(
     # Set MAX_EXPLORATION_STEPS env var for the runner
     os.environ["MAX_EXPLORATION_STEPS"] = str(max_steps)
 
-    # Build login params if credentials provided
-    login_params = None
-    if login_username and login_password:
-        login_params = {"username": login_username, "password": login_password}
-
-    # Build the ScrapeRequest
+    # Build the ScrapeRequest (using alias 'schema' for output_schema field)
     request = ScrapeRequest(
         nl_request=task,
-        output_schema=output_schema,
+        schema=output_schema,
+        example=None,
+        login_params=_build_login_params(login_username, login_password),
+        parameters=None,
         target_urls=[url],
-        login_params=login_params,
     )
 
     # Track progress steps and latest screenshot for the callback
-    callback_state = {"step": -1, "last_screenshot_b64": None}
+    callback_state: dict[str, int | str | None] = {"step": -1, "last_screenshot_b64": None}
 
     def progress_callback(data: dict[str, Any]) -> None:
         """Sync callback that schedules async progress reporting and captures screenshots.
@@ -108,9 +125,7 @@ async def browser(
         )
         if screenshot:
             callback_state["last_screenshot_b64"] = screenshot
-            print(
-                f"[MCP] Screenshot captured in callback_state: {len(screenshot)} bytes"
-            )
+            print(f"[MCP] Screenshot captured in callback_state: {len(screenshot)} bytes")
 
         # Avoid duplicate progress reports
         if step <= callback_state["step"]:
@@ -164,25 +179,15 @@ async def browser(
     )
 
     final_screenshot = callback_state["last_screenshot_b64"]
-    print(
-        f"[MCP] Returning result with screenshot: {bool(final_screenshot)}, len={len(final_screenshot) if final_screenshot else 0}"
-    )
+    screenshot_len = len(str(final_screenshot)) if final_screenshot else 0
+    print(f"[MCP] Returning result with screenshot: {bool(final_screenshot)}, len={screenshot_len}")
 
     # Import here to avoid linter removing "unused" imports at module level
     from fastmcp.tools.tool import ToolResult  # noqa: PLC0415
     from mcp.types import ImageContent, TextContent  # noqa: PLC0415
 
-    # Build text content with summary AND extracted data
-    # (structured_content may not be preserved through all transport layers)
-    text_parts = [
-        f"Browser task completed (job: {result.job_id}, status: {result.status})",
-        f"Execution: {' → '.join(result.execution_log)}",
-    ]
-
-    # Include extracted data in text content for reliable transport
-    if result.data:
-        text_parts.append(f"\nExtracted data:\n```json\n{json.dumps(result.data, indent=2)}\n```")
-
+    # Build content blocks for the response
+    text_parts = _build_result_text_parts(result)
     content_blocks: list[TextContent | ImageContent] = [
         TextContent(
             type="text",
@@ -195,7 +200,7 @@ async def browser(
         content_blocks.append(
             ImageContent(
                 type="image",
-                data=final_screenshot,
+                data=str(final_screenshot),
                 mimeType="image/png",
             )
         )

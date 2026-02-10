@@ -13,6 +13,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+
 from scry.api.dto import ScrapeRequest
 from scry.config.settings import settings
 from scry.core.codegen.generator import generate_script
@@ -33,7 +34,7 @@ class TestRealSelfHealing:
 
     @pytest.mark.integration
     @pytest.mark.slow
-    def test_mayflower_navigation_with_validation(self):
+    async def test_mayflower_navigation_with_validation(self):
         """Test navigation to Mayflower site with validation checkpoints."""
         req = ScrapeRequest(
             nl_request="Navigate to Mayflower website and extract the company name and main heading",
@@ -47,7 +48,7 @@ class TestRealSelfHealing:
             target_urls=["https://mayflower.de/"],
         )
 
-        result = run_job(req)
+        result = await run_job(req)
 
         # Should complete successfully
         assert result.status == "completed"
@@ -66,7 +67,7 @@ class TestRealSelfHealing:
 
     @pytest.mark.integration
     @pytest.mark.slow
-    def test_validation_failure_and_recovery(self):
+    async def test_validation_failure_and_recovery(self):
         """Test recovery from validation failures using a real page."""
         # Create a plan with a validation that might fail initially
         plan = ScrapePlan(
@@ -129,13 +130,11 @@ class TestRealSelfHealing:
                 )
 
                 # Should succeed after patch
-                assert result.returncode == 0, (
-                    f"Still failed after patch: {result.stderr}"
-                )
+                assert result.returncode == 0, f"Still failed after patch: {result.stderr}"
 
     @pytest.mark.integration
     @pytest.mark.slow
-    def test_progressive_healing_attempts(self):
+    async def test_progressive_healing_attempts(self):
         """Test that progressive healing attempts work on a real site."""
         # Create a challenging scraping request
         req = ScrapeRequest(
@@ -157,7 +156,7 @@ class TestRealSelfHealing:
             target_urls=["https://mayflower.de/"],
         )
 
-        result = run_job_with_id("test_progressive_healing", req)
+        result = await run_job_with_id("test_progressive_healing", req)
 
         # Check for any repair attempts
         repair_logs = [log for log in result.execution_log if "repair_attempt" in log]
@@ -172,7 +171,7 @@ class TestRealSelfHealing:
 
     @pytest.mark.integration
     @pytest.mark.slow
-    def test_cookie_banner_handling(self):
+    async def test_cookie_banner_handling(self):
         """Test that cookie banner patches work on real sites."""
         # Many German sites have cookie banners
         plan = ScrapePlan(
@@ -222,15 +221,13 @@ class TestRealSelfHealing:
 
     @pytest.mark.integration
     @pytest.mark.slow
-    def test_timeout_recovery(self):
+    async def test_timeout_recovery(self):
         """Test recovery from timeout errors with real page loading."""
         # Create a plan that might timeout on slow connections
         plan = ScrapePlan(
             steps=[
                 Navigate(url="https://mayflower.de/"),
-                WaitFor(
-                    selector=".complex-element-that-might-not-exist", state="visible"
-                ),
+                WaitFor(selector=".complex-element-that-might-not-exist", state="visible"),
                 Navigate(url="https://mayflower.de/leistungen/"),
             ],
         )
@@ -266,16 +263,13 @@ class TestRealSelfHealing:
                     patch = propose_patch(attempts, result.stderr, None)
 
                     # Verify patch includes wait adjustments
-                    assert (
-                        patch.get("wait_load_state") is True
-                        or patch.get("extra_wait_ms", 0) > 0
-                    )
+                    assert patch.get("wait_load_state") is True or patch.get("extra_wait_ms", 0) > 0
 
                     options = merge_codegen_options(options, patch)
 
     @pytest.mark.integration
     @pytest.mark.slow
-    def test_dynamic_content_validation(self):
+    async def test_dynamic_content_validation(self):
         """Test validation with dynamically loaded content."""
         req = ScrapeRequest(
             nl_request="Find and extract dynamic content from Mayflower site",
@@ -293,7 +287,7 @@ class TestRealSelfHealing:
         )
 
         # Run with validation-based self-healing
-        result = run_job(req)
+        result = await run_job(req)
 
         assert result.status == "completed"
 
@@ -307,7 +301,7 @@ class TestRealSelfHealing:
 
     @pytest.mark.integration
     @pytest.mark.slow
-    def test_multi_page_navigation_healing(self):
+    async def test_multi_page_navigation_healing(self):
         """Test self-healing across multiple page navigations."""
         # Navigate through multiple pages on Mayflower site
         plan = ScrapePlan(
@@ -373,13 +367,11 @@ class TestRealSelfHealing:
                     timeout=60,
                 )
 
-                assert result.returncode == 0, (
-                    "Multi-page navigation failed even with healing"
-                )
+                assert result.returncode == 0, "Multi-page navigation failed even with healing"
 
     @pytest.mark.integration
     @pytest.mark.slow
-    def test_extraction_after_healing(self):
+    async def test_extraction_after_healing(self):
         """Test that data extraction works after self-healing."""
         req = ScrapeRequest(
             nl_request="Extract all navigation menu items from Mayflower site",
@@ -397,7 +389,7 @@ class TestRealSelfHealing:
             target_urls=["https://mayflower.de/"],
         )
 
-        result = run_job(req)
+        result = await run_job(req)
 
         # Should complete and extract data
         assert result.status == "completed"
@@ -413,7 +405,7 @@ class TestRealSelfHealing:
 
     @pytest.mark.integration
     @pytest.mark.slow
-    def test_ai_powered_healing(self):
+    async def test_ai_powered_healing(self):
         """Test AI-powered healing with real errors."""
         if not os.getenv("ANTHROPIC_API_KEY") and not os.getenv("CLAUDE_API_KEY"):
             pytest.skip("No API key for AI-powered healing")
@@ -439,7 +431,7 @@ class TestRealSelfHealing:
             target_urls=["https://mayflower.de/"],
         )
 
-        result = run_job(req)
+        result = await run_job(req)
 
         assert result.status == "completed"
 

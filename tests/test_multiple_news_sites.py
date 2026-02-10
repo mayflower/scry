@@ -7,15 +7,14 @@ is not overfitted to a single domain.
 import os
 
 import pytest
+
 from scry.api.dto import ScrapeRequest  # type: ignore[import-untyped]
 from scry.core.executor.runner import run_job_with_id  # type: ignore[import-untyped]
 
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY"
-)
+@pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY")
 async def test_golem_news_extraction():
     """Extract the last 3 news items from golem.de.
 
@@ -54,15 +53,13 @@ async def test_golem_news_extraction():
     print(f"\nExtracted data: {result.data}")
 
     # Verify pipeline completed
-    assert any(
-        "exploring" in log.lower() for log in result.execution_log
-    ), "Should have exploration phase"
-    assert any(
-        "exploration_complete" in log.lower() for log in result.execution_log
-    ), "Exploration should complete"
-    assert any(
-        "done" in log.lower() for log in result.execution_log
-    ), "Pipeline should finish"
+    assert any("exploring" in log.lower() for log in result.execution_log), (
+        "Should have exploration phase"
+    )
+    assert any("exploration_complete" in log.lower() for log in result.execution_log), (
+        "Exploration should complete"
+    )
+    assert any("done" in log.lower() for log in result.execution_log), "Pipeline should finish"
 
     # Verify data structure
     assert result.data is not None, "Should extract some data"
@@ -73,9 +70,7 @@ async def test_golem_news_extraction():
         news_items = result.data["news"]
         assert isinstance(news_items, list), "News should be a list"
 
-        print(
-            f"\n✅ Successfully extracted {len(news_items)} news items from golem.de:"
-        )
+        print(f"\n✅ Successfully extracted {len(news_items)} news items from golem.de:")
         for i, item in enumerate(news_items[:3], 1):
             title = item.get("title", "N/A")
             link = item.get("link", "N/A")
@@ -87,18 +82,14 @@ async def test_golem_news_extraction():
         # Verify at least one item has title (links may be empty on some sites)
         if len(news_items) > 0:
             first_item = news_items[0]
-            assert first_item.get(
-                "title"
-            ), "First news item should have a non-empty title"
+            assert first_item.get("title"), "First news item should have a non-empty title"
 
     print("\n✅ golem.de test passed (cookie banner handled!)")
 
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY"
-)
+@pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY")
 async def test_chip_news_extraction():
     """Extract the last 3 news items from chip.de."""
     os.environ["MAX_EXPLORATION_STEPS"] = "10"
@@ -133,15 +124,13 @@ async def test_chip_news_extraction():
     print(f"\nExtracted data: {result.data}")
 
     # Verify pipeline completed
-    assert any(
-        "exploring" in log.lower() for log in result.execution_log
-    ), "Should have exploration phase"
-    assert any(
-        "exploration_complete" in log.lower() for log in result.execution_log
-    ), "Exploration should complete"
-    assert any(
-        "done" in log.lower() for log in result.execution_log
-    ), "Pipeline should finish"
+    assert any("exploring" in log.lower() for log in result.execution_log), (
+        "Should have exploration phase"
+    )
+    assert any("exploration_complete" in log.lower() for log in result.execution_log), (
+        "Exploration should complete"
+    )
+    assert any("done" in log.lower() for log in result.execution_log), "Pipeline should finish"
 
     # Verify data structure
     assert result.data is not None, "Should extract some data"
@@ -164,18 +153,14 @@ async def test_chip_news_extraction():
         # Verify at least one item has title (links may be empty on some sites)
         if len(news_items) > 0:
             first_item = news_items[0]
-            assert first_item.get(
-                "title"
-            ), "First news item should have a non-empty title"
+            assert first_item.get("title"), "First news item should have a non-empty title"
 
     print("\n✅ chip.de test passed")
 
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY"
-)
+@pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="Requires ANTHROPIC_API_KEY")
 async def test_computerbild_news_extraction():
     """Extract the last 3 news items from computerbild.de."""
     os.environ["MAX_EXPLORATION_STEPS"] = "10"
@@ -210,15 +195,13 @@ async def test_computerbild_news_extraction():
     print(f"\nExtracted data: {result.data}")
 
     # Verify pipeline completed
-    assert any(
-        "exploring" in log.lower() for log in result.execution_log
-    ), "Should have exploration phase"
-    assert any(
-        "exploration_complete" in log.lower() for log in result.execution_log
-    ), "Exploration should complete"
-    assert any(
-        "done" in log.lower() for log in result.execution_log
-    ), "Pipeline should finish"
+    assert any("exploring" in log.lower() for log in result.execution_log), (
+        "Should have exploration phase"
+    )
+    assert any("exploration_complete" in log.lower() for log in result.execution_log), (
+        "Exploration should complete"
+    )
+    assert any("done" in log.lower() for log in result.execution_log), "Pipeline should finish"
 
     # Verify data structure
     assert result.data is not None, "Should extract some data"
@@ -229,9 +212,7 @@ async def test_computerbild_news_extraction():
         news_items = result.data["news"]
         assert isinstance(news_items, list), "News should be a list"
 
-        print(
-            f"\n✅ Successfully extracted {len(news_items)} news items from computerbild.de:"
-        )
+        print(f"\n✅ Successfully extracted {len(news_items)} news items from computerbild.de:")
         for i, item in enumerate(news_items[:3], 1):
             title = item.get("title", "N/A")
             link = item.get("link", "N/A")
@@ -243,9 +224,7 @@ async def test_computerbild_news_extraction():
         # Verify at least one item has title (links may be empty on some sites)
         if len(news_items) > 0:
             first_item = news_items[0]
-            assert first_item.get(
-                "title"
-            ), "First news item should have a non-empty title"
+            assert first_item.get("title"), "First news item should have a non-empty title"
 
     print("\n✅ computerbild.de test passed")
 
