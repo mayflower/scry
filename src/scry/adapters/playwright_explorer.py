@@ -536,8 +536,8 @@ async def _explore_with_complete_json(
 
     screenshots_dir = cfg.screenshots_dir
     html_dir = cfg.html_dir
-    assert screenshots_dir is not None
-    assert html_dir is not None
+    if screenshots_dir is None or html_dir is None:
+        raise ValueError("screenshots_dir and html_dir must be provided")
 
     async with async_playwright() as p:
         browser: Browser = await p.chromium.launch(headless=cfg.headless)
@@ -1214,8 +1214,8 @@ async def _explore_with_browser_tools(
 
     screenshots_dir = cfg.screenshots_dir
     html_dir = cfg.html_dir
-    assert screenshots_dir is not None
-    assert html_dir is not None
+    if screenshots_dir is None or html_dir is None:
+        raise ValueError("screenshots_dir and html_dir must be provided")
 
     screenshots_dir.mkdir(parents=True, exist_ok=True)
     html_dir.mkdir(parents=True, exist_ok=True)
