@@ -220,12 +220,14 @@ def _execute_with_self_healing(
 
         if progress_callback:
             try:
-                progress_callback({
-                    "step": max_exploration_steps + attempt + 1,
-                    "max_steps": max_exploration_steps + 5,
-                    "action": "codegen" if attempt == 0 else f"repair_attempt_{attempt}",
-                    "status": "executing",
-                })
+                progress_callback(
+                    {
+                        "step": max_exploration_steps + attempt + 1,
+                        "max_steps": max_exploration_steps + 5,
+                        "action": "codegen" if attempt == 0 else f"repair_attempt_{attempt}",
+                        "status": "executing",
+                    }
+                )
             except Exception:
                 logger.debug("Progress callback failed during codegen attempt %d", attempt)
 
@@ -378,7 +380,11 @@ async def run_job_with_id(
 
     # Execute with self-healing
     _execute_with_self_healing(
-        opt, job_id, artifacts_root, extraction_spec, execution_log,
+        opt,
+        job_id,
+        artifacts_root,
+        extraction_spec,
+        execution_log,
         progress_callback=progress_callback,
         max_exploration_steps=max_exploration_steps,
     )
@@ -386,12 +392,14 @@ async def run_job_with_id(
     # Extract final data
     if progress_callback:
         try:
-            progress_callback({
-                "step": max_exploration_steps + 4,
-                "max_steps": max_exploration_steps + 5,
-                "action": "extracting_data",
-                "status": "extracting",
-            })
+            progress_callback(
+                {
+                    "step": max_exploration_steps + 4,
+                    "max_steps": max_exploration_steps + 5,
+                    "action": "extracting_data",
+                    "status": "extracting",
+                }
+            )
         except Exception:
             logger.debug("Progress callback failed during extraction")
 

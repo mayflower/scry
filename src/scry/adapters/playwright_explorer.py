@@ -576,14 +576,16 @@ async def _explore_with_complete_json(
 
             if cfg.progress_callback:
                 try:
-                    cfg.progress_callback({
-                        "step": 0,
-                        "max_steps": cfg.max_steps,
-                        "action": "navigated",
-                        "url": cfg.start_url,
-                        "status": "exploring",
-                        "screenshot_b64": b64.b64encode(screenshot_bytes).decode(),
-                    })
+                    cfg.progress_callback(
+                        {
+                            "step": 0,
+                            "max_steps": cfg.max_steps,
+                            "action": "navigated",
+                            "url": cfg.start_url,
+                            "status": "exploring",
+                            "screenshot_b64": b64.b64encode(screenshot_bytes).decode(),
+                        }
+                    )
                 except Exception:
                     logger.debug("Progress callback failed at step 0")
 
@@ -594,7 +596,12 @@ async def _explore_with_complete_json(
                 page_state = await _get_page_state(page)
 
                 action = _decide_next_action(
-                    page_state, cfg.nl_request, cfg.schema, urls, step, cfg.max_steps,
+                    page_state,
+                    cfg.nl_request,
+                    cfg.schema,
+                    urls,
+                    step,
+                    cfg.max_steps,
                     cfg.login_params,
                 )
 
@@ -615,20 +622,27 @@ async def _explore_with_complete_json(
                         continue
 
                     step_screenshot = await _capture_exploration_state(
-                        page, step, cfg.job_id, screenshots_dir, screenshots, urls,
+                        page,
+                        step,
+                        cfg.job_id,
+                        screenshots_dir,
+                        screenshots,
+                        urls,
                         html_pages,
                     )
 
                     if cfg.progress_callback:
                         try:
-                            cfg.progress_callback({
-                                "step": step,
-                                "max_steps": cfg.max_steps,
-                                "action": action.get("action", "exploring"),
-                                "url": page.url,
-                                "status": "exploring",
-                                "screenshot_b64": b64.b64encode(step_screenshot).decode(),
-                            })
+                            cfg.progress_callback(
+                                {
+                                    "step": step,
+                                    "max_steps": cfg.max_steps,
+                                    "action": action.get("action", "exploring"),
+                                    "url": page.url,
+                                    "status": "exploring",
+                                    "screenshot_b64": b64.b64encode(step_screenshot).decode(),
+                                }
+                            )
                         except Exception:
                             logger.debug("Progress callback failed at step %d", step)
 
@@ -1177,14 +1191,16 @@ async def _run_exploration_loop(
         if progress_callback and len(screenshots) > prev_screenshot_count:
             latest = screenshots[-1]
             try:
-                progress_callback({
-                    "step": iteration + 1,
-                    "max_steps": max_steps,
-                    "action": "browser_action",
-                    "url": page.url,
-                    "status": "exploring",
-                    "screenshot_b64": b64.b64encode(latest.read_bytes()).decode(),
-                })
+                progress_callback(
+                    {
+                        "step": iteration + 1,
+                        "max_steps": max_steps,
+                        "action": "browser_action",
+                        "url": page.url,
+                        "status": "exploring",
+                        "screenshot_b64": b64.b64encode(latest.read_bytes()).decode(),
+                    }
+                )
             except Exception:
                 logger.debug("Progress callback failed at iteration %d", iteration)
 
@@ -1231,7 +1247,9 @@ async def _explore_with_browser_tools(
             page.set_default_timeout(30000)
 
             task_description = _build_task_description(
-                cfg.nl_request, cfg.schema, cfg.start_url,
+                cfg.nl_request,
+                cfg.schema,
+                cfg.start_url,
             )
             messages: list[dict[str, Any]] = [{"role": "user", "content": task_description}]
 
