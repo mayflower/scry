@@ -42,14 +42,13 @@ def init_telemetry() -> None:
         from opentelemetry.sdk.resources import Resource
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
-        from opentelemetry.semconv.resource import ResourceAttributes
 
         # Create resource with service identification
         resource = Resource.create(
             {
-                ResourceAttributes.SERVICE_NAME: OTEL_SERVICE_NAME,
-                ResourceAttributes.DEPLOYMENT_ENVIRONMENT: os.getenv("ENVIRONMENT", "development"),
-                ResourceAttributes.SERVICE_VERSION: os.getenv("APP_VERSION", "unknown"),
+                "service.name": OTEL_SERVICE_NAME,
+                "deployment.environment": os.getenv("ENVIRONMENT", "development"),
+                "service.version": os.getenv("APP_VERSION", "unknown"),
             }
         )
 
@@ -89,8 +88,9 @@ def shutdown_telemetry() -> None:
         from opentelemetry import trace
 
         provider = trace.get_tracer_provider()
-        if hasattr(provider, "shutdown"):
-            provider.shutdown()
+        shutdown = getattr(provider, "shutdown", None)
+        if callable(shutdown):
+            shutdown()
             logger.info("OpenTelemetry tracer provider shut down")
     except Exception as e:
         logger.warning(f"Error shutting down OpenTelemetry: {e}")

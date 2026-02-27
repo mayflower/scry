@@ -169,7 +169,9 @@ def detect_cookie_banner(
         if dismiss_ref and ref_manager:
             ref_data = ref_manager.get_ref(dismiss_ref)
             if ref_data and hasattr(ref_data, "selector"):
-                dismiss_selector = ref_data.selector
+                selector_value = ref_data.selector
+                if isinstance(selector_value, str):
+                    dismiss_selector = selector_value
 
         print(
             f"[Cookie] Detection result: has_banner={has_banner}, "

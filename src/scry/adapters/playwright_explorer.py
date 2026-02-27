@@ -13,6 +13,7 @@ import base64 as b64
 import json
 import logging
 import time
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
@@ -44,6 +45,22 @@ logger = logging.getLogger(__name__)
 
 # Confidence threshold for cookie banner dismissal
 COOKIE_CONFIDENCE_THRESHOLD = 0.7
+
+
+@dataclass
+class ExplorationConfig:
+    """Groups parameters shared across exploration functions."""
+
+    start_url: str
+    nl_request: str
+    schema: dict[str, Any] = field(default_factory=dict)
+    screenshots_dir: Path | None = None
+    html_dir: Path | None = None
+    job_id: str = ""
+    max_steps: int = 20
+    headless: bool = True
+    login_params: dict[str, Any] | None = None
+    progress_callback: Any | None = None
 
 
 async def _gather_banner_hints(page: Page) -> BannerHints:
@@ -500,22 +517,13 @@ async def _capture_exploration_state(
 
 
 async def _explore_with_complete_json(
-    start_url: str,
-    nl_request: str,
-    schema: dict[str, Any],
-    screenshots_dir: Path,
-    html_dir: Path,
-    job_id: str,
-    max_steps: int,
-    headless: bool,
-    login_params: dict[str, Any] | None,
-    progress_callback: Any | None = None,
+    cfg: ExplorationConfig,
 ) -> ExplorationResult:
     """Async exploration using complete_json API for LLM decisions."""
 
     start_time = time.perf_counter()
-    print(f"[Explorer] Starting async exploration for job {job_id}")
-    print(f"[Explorer] Target: {start_url}")
+    print(f"[Explorer] Starting async exploration for job {cfg.job_id}")
+    print(f"[Explorer] Target: {cfg.start_url}")
 
     actions: list[Any] = []
     urls: list[str] = []
@@ -523,11 +531,16 @@ async def _explore_with_complete_json(
     screenshots: list[Path] = []
     data: dict[str, Any] = {}
 
-    parsed_url = urlparse(start_url)
+    parsed_url = urlparse(cfg.start_url)
     target_domain = parsed_url.netloc.removeprefix("www.")
 
+    screenshots_dir = cfg.screenshots_dir
+    html_dir = cfg.html_dir
+    assert screenshots_dir is not None
+    assert html_dir is not None
+
     async with async_playwright() as p:
-        browser: Browser = await p.chromium.launch(headless=headless)
+        browser: Browser = await p.chromium.launch(headless=cfg.headless)
         try:
             context = await browser.new_context(
                 viewport={"width": 1280, "height": 720},
@@ -539,10 +552,10 @@ async def _explore_with_complete_json(
             print(f"[Explorer] Browser ready in {time.perf_counter() - start_time:.2f}s")
 
             # Navigate to start URL
-            print(f"[Explorer] Navigating to {start_url}")
-            await page.goto(start_url, wait_until="domcontentloaded")
-            actions.append(Navigate(url=start_url))
-            urls.append(start_url)
+            print(f"[Explorer] Navigating to {cfg.start_url}")
+            await page.goto(cfg.start_url, wait_until="domcontentloaded")
+            actions.append(Navigate(url=cfg.start_url))
+            urls.append(cfg.start_url)
 
             # Wait for dynamic content
             await page.wait_for_timeout(2000)
@@ -556,18 +569,18 @@ async def _explore_with_complete_json(
             screenshots_dir.mkdir(parents=True, exist_ok=True)
             html_dir.mkdir(parents=True, exist_ok=True)
 
-            screenshot_path = screenshots_dir / f"exploration-step-0-{job_id}.png"
+            screenshot_path = screenshots_dir / f"exploration-step-0-{cfg.job_id}.png"
             screenshot_bytes = await page.screenshot(full_page=True)
             screenshot_path.write_bytes(screenshot_bytes)
             screenshots.append(screenshot_path)
 
-            if progress_callback:
+            if cfg.progress_callback:
                 try:
-                    progress_callback({
+                    cfg.progress_callback({
                         "step": 0,
-                        "max_steps": max_steps,
+                        "max_steps": cfg.max_steps,
                         "action": "navigated",
-                        "url": start_url,
+                        "url": cfg.start_url,
                         "status": "exploring",
                         "screenshot_b64": b64.b64encode(screenshot_bytes).decode(),
                     })
@@ -575,13 +588,14 @@ async def _explore_with_complete_json(
                     logger.debug("Progress callback failed at step 0")
 
             # Exploration loop
-            for step in range(1, max_steps + 1):
-                print(f"[Explorer] Step {step}/{max_steps}")
+            for step in range(1, cfg.max_steps + 1):
+                print(f"[Explorer] Step {step}/{cfg.max_steps}")
 
                 page_state = await _get_page_state(page)
 
                 action = _decide_next_action(
-                    page_state, nl_request, schema, urls, step, max_steps, login_params
+                    page_state, cfg.nl_request, cfg.schema, urls, step, cfg.max_steps,
+                    cfg.login_params,
                 )
 
                 if not action or action.get("action") == "done":
@@ -601,14 +615,15 @@ async def _explore_with_complete_json(
                         continue
 
                     step_screenshot = await _capture_exploration_state(
-                        page, step, job_id, screenshots_dir, screenshots, urls, html_pages
+                        page, step, cfg.job_id, screenshots_dir, screenshots, urls,
+                        html_pages,
                     )
 
-                    if progress_callback:
+                    if cfg.progress_callback:
                         try:
-                            progress_callback({
+                            cfg.progress_callback({
                                 "step": step,
-                                "max_steps": max_steps,
+                                "max_steps": cfg.max_steps,
                                 "action": action.get("action", "exploring"),
                                 "url": page.url,
                                 "status": "exploring",
@@ -1178,16 +1193,7 @@ async def _run_exploration_loop(
 
 
 async def _explore_with_browser_tools(
-    start_url: str,
-    nl_request: str,
-    schema: dict[str, Any],
-    screenshots_dir: Path,
-    html_dir: Path,
-    job_id: str,
-    max_steps: int,
-    headless: bool,
-    login_params: dict[str, Any] | None,
-    progress_callback: Any | None = None,
+    cfg: ExplorationConfig,
 ) -> ExplorationResult:
     """Exploration using browser tools with standard messages API.
 
@@ -1195,13 +1201,10 @@ async def _explore_with_browser_tools(
     - Custom tool schema passed to client.messages.create()
     - Manual tool execution with async Playwright
     - No special beta API required
-
-    Args:
-        login_params: Reserved for future authentication support (not yet implemented)
     """
-    _ = login_params  # Reserved for future use
+    _ = cfg.login_params  # Reserved for future use
 
-    print(f"[Explorer] Starting browser tools exploration for job {job_id}")
+    print(f"[Explorer] Starting browser tools exploration for job {cfg.job_id}")
 
     ir_actions: list[Any] = []
     urls: list[str] = []
@@ -1209,11 +1212,16 @@ async def _explore_with_browser_tools(
     screenshots: list[Path] = []
     ref_map: dict[str, str] = {}
 
+    screenshots_dir = cfg.screenshots_dir
+    html_dir = cfg.html_dir
+    assert screenshots_dir is not None
+    assert html_dir is not None
+
     screenshots_dir.mkdir(parents=True, exist_ok=True)
     html_dir.mkdir(parents=True, exist_ok=True)
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=headless)
+        browser = await p.chromium.launch(headless=cfg.headless)
         try:
             context = await browser.new_context(
                 viewport={"width": 1280, "height": 720},
@@ -1222,20 +1230,22 @@ async def _explore_with_browser_tools(
             page = await context.new_page()
             page.set_default_timeout(30000)
 
-            task_description = _build_task_description(nl_request, schema, start_url)
+            task_description = _build_task_description(
+                cfg.nl_request, cfg.schema, cfg.start_url,
+            )
             messages: list[dict[str, Any]] = [{"role": "user", "content": task_description}]
 
             await _run_exploration_loop(
                 page,
                 messages,
-                max_steps,
+                cfg.max_steps,
                 ref_map,
                 screenshots_dir,
-                job_id,
+                cfg.job_id,
                 ir_actions,
                 urls,
                 screenshots,
-                progress_callback,
+                cfg.progress_callback,
             )
 
             # Capture final HTML
@@ -1253,7 +1263,7 @@ async def _explore_with_browser_tools(
         steps=ir_actions,
         screenshots=screenshots,
         html_pages=html_pages,
-        urls=urls if urls else [start_url],
+        urls=urls if urls else [cfg.start_url],
         data={},
     )
 
@@ -1299,31 +1309,22 @@ async def explore_with_playwright(
             data={},
         )
 
+    cfg = ExplorationConfig(
+        start_url=start_url,
+        nl_request=nl_request,
+        schema=schema,
+        screenshots_dir=screenshots_dir,
+        html_dir=html_dir,
+        job_id=job_id,
+        max_steps=max_steps,
+        headless=headless,
+        login_params=login_params,
+        progress_callback=progress_callback,
+    )
+
     if has_browser_tools():
         print("[Explorer] Using Browser Tools API")
-        return await _explore_with_browser_tools(
-            start_url=start_url,
-            nl_request=nl_request,
-            schema=schema,
-            screenshots_dir=screenshots_dir,
-            html_dir=html_dir,
-            job_id=job_id,
-            max_steps=max_steps,
-            headless=headless,
-            login_params=login_params,
-            progress_callback=progress_callback,
-        )
+        return await _explore_with_browser_tools(cfg)
     else:
         print("[Explorer] Using async Playwright with complete_json API")
-        return await _explore_with_complete_json(
-            start_url=start_url,
-            nl_request=nl_request,
-            schema=schema,
-            screenshots_dir=screenshots_dir,
-            html_dir=html_dir,
-            job_id=job_id,
-            max_steps=max_steps,
-            headless=headless,
-            login_params=login_params,
-            progress_callback=progress_callback,
-        )
+        return await _explore_with_complete_json(cfg)

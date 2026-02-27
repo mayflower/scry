@@ -8,7 +8,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 try:
-    import jsonschema  # type: ignore[import-untyped]
+    import jsonschema
 except ImportError:  # pragma: no cover
     jsonschema = None  # type: ignore[assignment]
 

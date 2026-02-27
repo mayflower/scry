@@ -244,7 +244,7 @@ def complete_json(
     )
     # Concatenate text blocks
     parts = []
-    for block in msg.content:  # type: ignore[attr-defined]
+    for block in msg.content:
         if getattr(block, "type", None) == "text":
             parts.append(getattr(block, "text", ""))
     raw = "".join(parts)

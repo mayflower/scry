@@ -20,7 +20,7 @@ def _worker_loop() -> None:
             continue
         try:
             job_id = msg.get("job_id")
-            req = ScrapeRequest(**msg["request"])  # type: ignore[index]
+            req = ScrapeRequest(**msg["request"])
             # Run async functions from sync worker thread
             if job_id:
                 result = asyncio.run(run_job_with_id(job_id, req))

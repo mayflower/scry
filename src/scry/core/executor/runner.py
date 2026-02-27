@@ -98,10 +98,25 @@ def _synthesize_extraction_selectors(
     return extraction_spec
 
 
+def _validate_script_path(script_path: Path) -> None:
+    """Validate that a script path is safe for execution."""
+    resolved = script_path.resolve()
+    artifacts_root = Path(settings.artifacts_root).resolve()
+    if not str(resolved).startswith(str(artifacts_root)):
+        raise ValueError(
+            f"Script path {resolved} is outside the artifacts directory {artifacts_root}"
+        )
+    if not resolved.suffix == ".py":
+        raise ValueError(f"Only .py scripts can be executed, got: {resolved.suffix}")
+    if not resolved.is_file():
+        raise FileNotFoundError(f"Script not found: {resolved}")
+
+
 def _run_script_once(script_path: Path) -> subprocess.CompletedProcess[str]:
     """Execute generated script and return result."""
-    return subprocess.run(
-        [sys.executable, str(script_path)],
+    _validate_script_path(script_path)
+    return subprocess.run(  # noqa: S603
+        [sys.executable, str(script_path.resolve())],
         check=False,
         capture_output=True,
         text=True,

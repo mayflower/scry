@@ -82,7 +82,7 @@ class BrowserExecutor:
             headless=self.headless, slow_mo=self.slow_mo
         )
         self._context = self._browser.new_context(
-            viewport={"width": self.viewport["width"], "height": self.viewport["height"]}  # type: ignore[arg-type]
+            viewport={"width": self.viewport["width"], "height": self.viewport["height"]}
         )
         self._page = self._context.new_page()
 
@@ -258,7 +258,7 @@ class BrowserExecutor:
                             "Literal['Alt', 'Control', 'ControlOrMeta', 'Meta', 'Shift']",
                             mod,
                         )
-                    )  # type: ignore[arg-type]
+                    )
             modifiers_typed = valid_modifiers if valid_modifiers else None
 
         element.click(button=button_typed, click_count=click_count, modifiers=modifiers_typed)
