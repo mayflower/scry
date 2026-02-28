@@ -1,7 +1,19 @@
-.PHONY: help up down build test test-unit test-integration test-v1 test-v2 test-v3 test-all logs clean shell
+.PHONY: help install lint lint-fix format format-fix typecheck security quality test-local coverage up down build test test-unit test-integration test-v1 test-v2 test-v3 test-all logs clean shell
 
 help:
-	@echo "Available commands:"
+	@echo "Local Development (uv):"
+	@echo "  make install          - Install dependencies with uv"
+	@echo "  make lint             - Run ruff linter"
+	@echo "  make lint-fix         - Run ruff linter and auto-fix issues"
+	@echo "  make format           - Check code formatting with ruff"
+	@echo "  make format-fix       - Auto-format code with ruff"
+	@echo "  make typecheck        - Run mypy type checker"
+	@echo "  make security         - Run bandit security scanner"
+	@echo "  make quality          - Run all quality checks (lint, format, typecheck, security)"
+	@echo "  make test-local       - Run tests locally with pytest"
+	@echo "  make coverage         - Run tests with coverage report"
+	@echo ""
+	@echo "Docker Commands:"
 	@echo "  make up               - Start Docker Compose stack"
 	@echo "  make down             - Stop Docker Compose stack"
 	@echo "  make build            - Build Docker images"
@@ -15,6 +27,49 @@ help:
 	@echo "  make logs             - Show container logs"
 	@echo "  make clean            - Clean up artifacts and containers"
 	@echo "  make shell            - Open shell in API container"
+
+# =============================================================================
+# Local Development (uv)
+# =============================================================================
+
+install:
+	uv sync --extra dev
+
+lint:
+	uv run ruff check src/scry tests/
+
+lint-fix:
+	uv run ruff check src/scry tests/ --fix
+
+format:
+	uv run ruff format --check src/scry tests/
+
+format-fix:
+	uv run ruff format src/scry tests/
+
+typecheck:
+	uv run mypy src/scry
+
+security:
+	uv run bandit -r src/scry -f json -o bandit-results.json || true
+	@echo "Bandit results written to bandit-results.json"
+
+quality: lint format typecheck security
+	@echo "All quality checks passed!"
+
+test-local:
+	uv run pytest tests/ -v --tb=short -m "not integration"
+
+coverage:
+	uv run pytest tests/ -v -m "not integration" \
+		--cov=src/scry \
+		--cov-report=term-missing \
+		--cov-report=xml:coverage.xml \
+		--junitxml=junit.xml
+
+# =============================================================================
+# Docker Commands
+# =============================================================================
 
 up:
 	cd docker/compose && docker compose up -d

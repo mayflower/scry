@@ -8,16 +8,33 @@ tool_result responses.
 from __future__ import annotations
 
 import base64
+import logging
 from typing import TYPE_CHECKING, Any
-
-from playwright.sync_api import ElementHandle, Page
 
 from .dom_tree import DOMTreeGenerator
 from .element_refs import ElementReferenceManager
 
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Browser, BrowserContext, Playwright
+    from collections.abc import Sequence
+
+    from playwright.sync_api import Browser, BrowserContext, ElementHandle, Page, Playwright
+
+# Error message constants to avoid duplication
+_ERR_REF_OR_COORD_REQUIRED = "Either ref or coordinate is required"
+_ERR_COORD_FORMAT = "coordinate must be [x, y]"
+_ERR_START_COORD_FORMAT = "start_coordinate must be [x, y]"
+
+# Modifier key mapping
+_MODIFIER_KEYS: dict[str, str] = {
+    "ctrl": "Control",
+    "control": "Control",
+    "cmd": "Meta",
+    "meta": "Meta",
+    "shift": "Shift",
+    "alt": "Alt",
+}
 
 
 class BrowserExecutor:
@@ -64,14 +81,16 @@ class BrowserExecutor:
         self._browser = self._playwright.chromium.launch(
             headless=self.headless, slow_mo=self.slow_mo
         )
-        self._context = self._browser.new_context(viewport=self.viewport)
+        self._context = self._browser.new_context(
+            viewport={"width": self.viewport["width"], "height": self.viewport["height"]}  # type: ignore[arg-type]
+        )
         self._page = self._context.new_page()
 
         # Initialize DOM generator
         self.dom_generator = DOMTreeGenerator(self._page, self.ref_manager)
 
         # Event listener for navigation
-        self._page.on("load", self._on_page_load)
+        self._page.on("load", lambda _: self._on_page_load())
 
         print(f"[BrowserExecutor] Browser started (viewport: {self.viewport})")
 
@@ -152,9 +171,7 @@ class BrowserExecutor:
 
     # === Helper methods ===
 
-    def _success_result(
-        self, tool_use_id: str, content: list[dict[str, Any]]
-    ) -> dict[str, Any]:
+    def _success_result(self, tool_use_id: str, content: list[dict[str, Any]]) -> dict[str, Any]:
         """Create successful tool_result response."""
         return {"type": "tool_result", "tool_use_id": tool_use_id, "content": content}
 
@@ -199,8 +216,8 @@ class BrowserExecutor:
             element = self.page.query_selector(ref_data.selector)
             if element:
                 return element
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Selector query failed for ref %s: %s", ref, e)
 
         return None
 
@@ -218,7 +235,6 @@ class BrowserExecutor:
         modifiers: list[str] | None = None,
     ):
         """Click an element with specified button and modifiers."""
-        from collections.abc import Sequence
         from typing import Literal, cast
 
         self._scroll_element_into_view(element)
@@ -234,9 +250,7 @@ class BrowserExecutor:
             Sequence[Literal["Alt", "Control", "ControlOrMeta", "Meta", "Shift"]] | None
         ) = None
         if modifiers:
-            valid_modifiers: list[
-                Literal["Alt", "Control", "ControlOrMeta", "Meta", "Shift"]
-            ] = []
+            valid_modifiers: list[Literal["Alt", "Control", "ControlOrMeta", "Meta", "Shift"]] = []
             for mod in modifiers:
                 if mod in ("Alt", "Control", "ControlOrMeta", "Meta", "Shift"):
                     valid_modifiers.append(
@@ -247,22 +261,16 @@ class BrowserExecutor:
                     )  # type: ignore[arg-type]
             modifiers_typed = valid_modifiers if valid_modifiers else None
 
-        element.click(
-            button=button_typed, click_count=click_count, modifiers=modifiers_typed
-        )
+        element.click(button=button_typed, click_count=click_count, modifiers=modifiers_typed)
 
     # === Action handlers ===
 
-    def _handle_navigate(
-        self, tool_use_id: str, input_data: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _handle_navigate(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Navigate to URL or through history."""
         url = input_data.get("text", "")
 
         if not url:
-            return self._error_result(
-                tool_use_id, "URL is required for navigate action"
-            )
+            return self._error_result(tool_use_id, "URL is required for navigate action")
 
         if url == "back":
             self.page.go_back(wait_until="domcontentloaded")
@@ -283,16 +291,12 @@ class BrowserExecutor:
             tool_use_id, [{"type": "text", "text": f"Navigated to {url}"}, screenshot]
         )
 
-    def _handle_screenshot(
-        self, tool_use_id: str, input_data: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _handle_screenshot(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Take screenshot of viewport."""
         screenshot = self._take_screenshot()
         return self._success_result(tool_use_id, [screenshot])
 
-    def _handle_read_page(
-        self, tool_use_id: str, input_data: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _handle_read_page(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Generate DOM tree with element references."""
         filter_type = input_data.get("text", "")
 
@@ -303,9 +307,7 @@ class BrowserExecutor:
 
         return self._success_result(tool_use_id, [{"type": "text", "text": tree}])
 
-    def _handle_get_page_text(
-        self, tool_use_id: str, input_data: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _handle_get_page_text(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Extract text content from page."""
         title = self.page.title()
         url = self.page.url
@@ -329,8 +331,8 @@ class BrowserExecutor:
                     text = element.inner_text()
                     if text:
                         break
-            except Exception:
-                continue
+            except Exception as e:
+                logger.debug("Content selector %s failed: %s", selector, e)
 
         # Normalize whitespace
         text = " ".join(text.split())
@@ -341,16 +343,12 @@ class BrowserExecutor:
 
         return self._success_result(tool_use_id, [{"type": "text", "text": output}])
 
-    def _handle_find(
-        self, tool_use_id: str, input_data: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _handle_find(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Find elements by semantic query."""
         query = input_data.get("text", "")
 
         if not query:
-            return self._error_result(
-                tool_use_id, "Search query is required for find action"
-            )
+            return self._error_result(tool_use_id, "Search query is required for find action")
 
         # For now, return a message that find is not fully implemented
         # In production, this would search through element refs by name/role
@@ -360,10 +358,7 @@ class BrowserExecutor:
         query_lower = query.lower()
         for ref_id, ref_data in all_refs.items():
             # Simple matching by name or role
-            if (
-                query_lower in ref_data.name.lower()
-                or query_lower in ref_data.role.lower()
-            ):
+            if query_lower in ref_data.name.lower() or query_lower in ref_data.role.lower():
                 matches.append(f"- {ref_id}: {ref_data.role} {ref_data.name[:50]}")
 
         if matches:
@@ -373,20 +368,14 @@ class BrowserExecutor:
         else:
             result_text = "No matching elements found"
 
-        return self._success_result(
-            tool_use_id, [{"type": "text", "text": result_text}]
-        )
+        return self._success_result(tool_use_id, [{"type": "text", "text": result_text}])
 
-    def _handle_zoom(
-        self, tool_use_id: str, input_data: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _handle_zoom(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Take screenshot of specific region."""
         region = input_data.get("region")
 
         if not region or len(region) != 4:
-            return self._error_result(
-                tool_use_id, "Region must be [x, y, width, height]"
-            )
+            return self._error_result(tool_use_id, "Region must be [x, y, width, height]")
 
         x, y, width, height = region
         png_bytes = self.page.screenshot(
@@ -405,9 +394,7 @@ class BrowserExecutor:
 
         return self._success_result(tool_use_id, [screenshot])
 
-    def _handle_left_click(
-        self, tool_use_id: str, input_data: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _handle_left_click(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Handle left click (with ref or coordinate)."""
         ref = input_data.get("ref")
         coordinate = input_data.get("coordinate")
@@ -419,25 +406,17 @@ class BrowserExecutor:
             element = self._get_element_by_ref(ref)
             if not element:
                 return self._error_result(tool_use_id, f"Element not found: {ref}")
-            self._click_element(
-                element, button="left", click_count=1, modifiers=modifiers
-            )
-            return self._success_result(
-                tool_use_id, [{"type": "text", "text": f"Clicked {ref}"}]
-            )
+            self._click_element(element, button="left", click_count=1, modifiers=modifiers)
+            return self._success_result(tool_use_id, [{"type": "text", "text": f"Clicked {ref}"}])
         if coordinate and len(coordinate) == 2:
             x, y = coordinate
             self.page.mouse.click(x, y, button="left")
             return self._success_result(
                 tool_use_id, [{"type": "text", "text": f"Clicked at ({x}, {y})"}]
             )
-        return self._error_result(
-            tool_use_id, "Either ref or coordinate is required for click"
-        )
+        return self._error_result(tool_use_id, _ERR_REF_OR_COORD_REQUIRED)
 
-    def _handle_right_click(
-        self, tool_use_id: str, input_data: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _handle_right_click(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Handle right click."""
         ref = input_data.get("ref")
         coordinate = input_data.get("coordinate")
@@ -456,11 +435,9 @@ class BrowserExecutor:
             return self._success_result(
                 tool_use_id, [{"type": "text", "text": f"Right-clicked at ({x}, {y})"}]
             )
-        return self._error_result(tool_use_id, "Either ref or coordinate is required")
+        return self._error_result(tool_use_id, _ERR_REF_OR_COORD_REQUIRED)
 
-    def _handle_middle_click(
-        self, tool_use_id: str, input_data: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _handle_middle_click(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Handle middle click."""
         ref = input_data.get("ref")
         coordinate = input_data.get("coordinate")
@@ -479,11 +456,9 @@ class BrowserExecutor:
             return self._success_result(
                 tool_use_id, [{"type": "text", "text": f"Middle-clicked at ({x}, {y})"}]
             )
-        return self._error_result(tool_use_id, "Either ref or coordinate is required")
+        return self._error_result(tool_use_id, _ERR_REF_OR_COORD_REQUIRED)
 
-    def _handle_double_click(
-        self, tool_use_id: str, input_data: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _handle_double_click(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Handle double click."""
         ref = input_data.get("ref")
         coordinate = input_data.get("coordinate")
@@ -502,11 +477,9 @@ class BrowserExecutor:
             return self._success_result(
                 tool_use_id, [{"type": "text", "text": f"Double-clicked at ({x}, {y})"}]
             )
-        return self._error_result(tool_use_id, "Either ref or coordinate is required")
+        return self._error_result(tool_use_id, _ERR_REF_OR_COORD_REQUIRED)
 
-    def _handle_triple_click(
-        self, tool_use_id: str, input_data: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _handle_triple_click(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Handle triple click."""
         ref = input_data.get("ref")
         coordinate = input_data.get("coordinate")
@@ -525,19 +498,17 @@ class BrowserExecutor:
             return self._success_result(
                 tool_use_id, [{"type": "text", "text": f"Triple-clicked at ({x}, {y})"}]
             )
-        return self._error_result(tool_use_id, "Either ref or coordinate is required")
+        return self._error_result(tool_use_id, _ERR_REF_OR_COORD_REQUIRED)
 
-    def _handle_drag(
-        self, tool_use_id: str, input_data: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _handle_drag(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Handle drag from start to end coordinate."""
         start_coord = input_data.get("start_coordinate")
         end_coord = input_data.get("coordinate")
 
         if not start_coord or len(start_coord) != 2:
-            return self._error_result(tool_use_id, "start_coordinate must be [x, y]")
+            return self._error_result(tool_use_id, _ERR_START_COORD_FORMAT)
         if not end_coord or len(end_coord) != 2:
-            return self._error_result(tool_use_id, "coordinate must be [x, y]")
+            return self._error_result(tool_use_id, _ERR_COORD_FORMAT)
 
         start_x, start_y = start_coord
         end_x, end_y = end_coord
@@ -557,14 +528,12 @@ class BrowserExecutor:
             ],
         )
 
-    def _handle_mouse_down(
-        self, tool_use_id: str, input_data: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _handle_mouse_down(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Handle mouse down at coordinate."""
         coordinate = input_data.get("coordinate")
 
         if not coordinate or len(coordinate) != 2:
-            return self._error_result(tool_use_id, "coordinate must be [x, y]")
+            return self._error_result(tool_use_id, _ERR_COORD_FORMAT)
 
         x, y = coordinate
         self.page.mouse.move(x, y)
@@ -574,14 +543,12 @@ class BrowserExecutor:
             tool_use_id, [{"type": "text", "text": f"Mouse down at ({x}, {y})"}]
         )
 
-    def _handle_mouse_up(
-        self, tool_use_id: str, input_data: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _handle_mouse_up(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Handle mouse up at coordinate."""
         coordinate = input_data.get("coordinate")
 
         if not coordinate or len(coordinate) != 2:
-            return self._error_result(tool_use_id, "coordinate must be [x, y]")
+            return self._error_result(tool_use_id, _ERR_COORD_FORMAT)
 
         x, y = coordinate
         self.page.mouse.move(x, y)
@@ -591,9 +558,7 @@ class BrowserExecutor:
             tool_use_id, [{"type": "text", "text": f"Mouse up at ({x}, {y})"}]
         )
 
-    def _handle_type(
-        self, tool_use_id: str, input_data: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _handle_type(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Type text into focused element."""
         text = input_data.get("text", "")
 
@@ -602,13 +567,23 @@ class BrowserExecutor:
 
         self.page.keyboard.type(text)
 
-        return self._success_result(
-            tool_use_id, [{"type": "text", "text": f"Typed: {text[:50]}"}]
-        )
+        return self._success_result(tool_use_id, [{"type": "text", "text": f"Typed: {text[:50]}"}])
 
-    def _handle_key(
-        self, tool_use_id: str, input_data: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _press_modifiers(self, modifiers: list[str]) -> None:
+        """Press modifier keys down."""
+        for mod in modifiers:
+            key = _MODIFIER_KEYS.get(mod)
+            if key:
+                self.page.keyboard.down(key)
+
+    def _release_modifiers(self, modifiers: list[str]) -> None:
+        """Release modifier keys."""
+        for mod in modifiers:
+            key = _MODIFIER_KEYS.get(mod)
+            if key:
+                self.page.keyboard.up(key)
+
+    def _handle_key(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Press key or key combination."""
         key_text = input_data.get("text", "")
 
@@ -617,54 +592,27 @@ class BrowserExecutor:
 
         # Handle key combinations (ctrl+a, cmd+v, etc.)
         if "+" in key_text:
-            # Split into modifiers + key
             parts = key_text.lower().split("+")
             modifiers = parts[:-1]
             key = parts[-1]
 
-            # Press modifiers
-            for mod in modifiers:
-                if mod in ("ctrl", "control"):
-                    self.page.keyboard.down("Control")
-                elif mod in ("cmd", "meta"):
-                    self.page.keyboard.down("Meta")
-                elif mod == "shift":
-                    self.page.keyboard.down("Shift")
-                elif mod == "alt":
-                    self.page.keyboard.down("Alt")
-
-            # Press key
+            self._press_modifiers(modifiers)
             self.page.keyboard.press(key.capitalize())
-
-            # Release modifiers
-            for mod in modifiers:
-                if mod in ("ctrl", "control"):
-                    self.page.keyboard.up("Control")
-                elif mod in ("cmd", "meta"):
-                    self.page.keyboard.up("Meta")
-                elif mod == "shift":
-                    self.page.keyboard.up("Shift")
-                elif mod == "alt":
-                    self.page.keyboard.up("Alt")
+            self._release_modifiers(modifiers)
         else:
-            # Single key
             self.page.keyboard.press(key_text.capitalize())
 
         return self._success_result(
             tool_use_id, [{"type": "text", "text": f"Pressed key: {key_text}"}]
         )
 
-    def _handle_hold_key(
-        self, tool_use_id: str, input_data: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _handle_hold_key(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Hold key for duration."""
         key = input_data.get("text", "")
         duration = input_data.get("duration", 1.0)
 
         if not key:
-            return self._error_result(
-                tool_use_id, "Key is required for hold_key action"
-            )
+            return self._error_result(tool_use_id, "Key is required for hold_key action")
 
         self.page.keyboard.down(key.capitalize())
         self.page.wait_for_timeout(int(duration * 1000))
@@ -674,9 +622,7 @@ class BrowserExecutor:
             tool_use_id, [{"type": "text", "text": f"Held key {key} for {duration}s"}]
         )
 
-    def _handle_scroll(
-        self, tool_use_id: str, input_data: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _handle_scroll(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Scroll in direction by amount."""
         direction = input_data.get("scroll_direction", "")
         amount = input_data.get("scroll_amount", 1)
@@ -703,9 +649,7 @@ class BrowserExecutor:
         elif direction == "left":
             delta_x = -pixels
         else:
-            return self._error_result(
-                tool_use_id, f"Invalid scroll direction: {direction}"
-            )
+            return self._error_result(tool_use_id, f"Invalid scroll direction: {direction}")
 
         # Scroll using mouse wheel
         if coordinate and len(coordinate) == 2:
@@ -718,16 +662,12 @@ class BrowserExecutor:
             tool_use_id, [{"type": "text", "text": f"Scrolled {direction} by {amount}"}]
         )
 
-    def _handle_scroll_to(
-        self, tool_use_id: str, input_data: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _handle_scroll_to(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Scroll element into view."""
         ref = input_data.get("ref")
 
         if not ref:
-            return self._error_result(
-                tool_use_id, "ref is required for scroll_to action"
-            )
+            return self._error_result(tool_use_id, "ref is required for scroll_to action")
 
         element = self._get_element_by_ref(ref)
         if not element:
@@ -735,21 +675,15 @@ class BrowserExecutor:
 
         self._scroll_element_into_view(element)
 
-        return self._success_result(
-            tool_use_id, [{"type": "text", "text": f"Scrolled to {ref}"}]
-        )
+        return self._success_result(tool_use_id, [{"type": "text", "text": f"Scrolled to {ref}"}])
 
-    def _handle_form_input(
-        self, tool_use_id: str, input_data: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _handle_form_input(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Set form input value programmatically."""
         ref = input_data.get("ref")
         value = input_data.get("value")
 
         if not ref:
-            return self._error_result(
-                tool_use_id, "ref is required for form_input action"
-            )
+            return self._error_result(tool_use_id, "ref is required for form_input action")
 
         element = self._get_element_by_ref(ref)
         if not element:
@@ -773,9 +707,7 @@ class BrowserExecutor:
             tool_use_id, [{"type": "text", "text": f"Set {ref} to {value}"}]
         )
 
-    def _handle_wait(
-        self, tool_use_id: str, input_data: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _handle_wait(self, tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Wait for specified duration."""
         duration = input_data.get("duration", 1.0)
 
@@ -784,6 +716,4 @@ class BrowserExecutor:
 
         self.page.wait_for_timeout(int(duration * 1000))
 
-        return self._success_result(
-            tool_use_id, [{"type": "text", "text": f"Waited {duration}s"}]
-        )
+        return self._success_result(tool_use_id, [{"type": "text", "text": f"Waited {duration}s"}])

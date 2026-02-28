@@ -22,7 +22,6 @@ import asyncio
 import atexit
 import os
 import time
-from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -30,7 +29,7 @@ from typing import TYPE_CHECKING
 from playwright.async_api import Browser, Playwright, async_playwright
 
 if TYPE_CHECKING:
-    pass
+    from collections.abc import AsyncGenerator
 
 
 @dataclass
@@ -80,9 +79,7 @@ class AsyncBrowserPool:
         self._health_task: asyncio.Task | None = None
 
     @classmethod
-    async def get_instance(
-        cls, config: BrowserPoolConfig | None = None
-    ) -> AsyncBrowserPool:
+    async def get_instance(cls, config: BrowserPoolConfig | None = None) -> AsyncBrowserPool:
         """Get or create the singleton browser pool instance."""
         if cls._lock is None:
             cls._lock = asyncio.Lock()
@@ -103,9 +100,7 @@ class AsyncBrowserPool:
             if self._initialized:
                 return
 
-            print(
-                f"[BrowserPool] Initializing async pool with {self.config.pool_size} browsers"
-            )
+            print(f"[BrowserPool] Initializing async pool with {self.config.pool_size} browsers")
             start = time.perf_counter()
 
             # Create browsers concurrently for faster initialization
@@ -113,14 +108,12 @@ class AsyncBrowserPool:
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
             for i, result in enumerate(results):
-                if isinstance(result, Exception):
+                if isinstance(result, BaseException):
                     print(f"[BrowserPool] Failed to create browser {i + 1}: {result}")
                 else:
                     self._all_browsers.append(result)
                     await self._pool.put(result)
-                    print(
-                        f"[BrowserPool] Browser {i + 1}/{self.config.pool_size} ready"
-                    )
+                    print(f"[BrowserPool] Browser {i + 1}/{self.config.pool_size} ready")
 
             elapsed = time.perf_counter() - start
             print(
@@ -168,9 +161,7 @@ class AsyncBrowserPool:
 
             # Check request count
             if pooled.request_count >= self.config.max_requests_per_browser:
-                print(
-                    f"[BrowserPool] Browser exceeded max requests ({pooled.request_count})"
-                )
+                print(f"[BrowserPool] Browser exceeded max requests ({pooled.request_count})")
                 return False
 
             # Check if browser is connected
@@ -238,30 +229,24 @@ class AsyncBrowserPool:
                     print(f"[BrowserPool] Failed to create replacement browser: {e}")
 
     @asynccontextmanager
-    async def acquire(
-        self, timeout: float = 30.0
-    ) -> AsyncGenerator[tuple[Browser, Playwright], None]:
+    async def acquire(self) -> AsyncGenerator[tuple[Browser, Playwright], None]:
         """Acquire a browser from the pool.
-
-        Args:
-            timeout: Maximum time to wait for a browser (seconds)
 
         Yields:
             Tuple of (Browser, Playwright) instances
 
-        Raises:
-            TimeoutError: If no browser available within timeout
+        Note:
+            Use asyncio.timeout() context manager if you need a timeout:
+            async with asyncio.timeout(30):
+                async with pool.acquire() as (browser, pw):
+                    ...
         """
         if not self._initialized:
             await self.initialize()
 
         pooled: PooledBrowser | None = None
         try:
-            # Get a browser from the pool
-            try:
-                pooled = await asyncio.wait_for(self._pool.get(), timeout=timeout)
-            except TimeoutError:
-                raise TimeoutError(f"No browser available within {timeout}s") from None
+            pooled = await self._pool.get()
 
             # Mark as in use
             pooled.in_use = True
@@ -290,9 +275,7 @@ class AsyncBrowserPool:
                     await self._pool.put(pooled)
                 else:
                     # Replace unhealthy browser
-                    print(
-                        "[BrowserPool] Releasing unhealthy browser, creating replacement"
-                    )
+                    print("[BrowserPool] Releasing unhealthy browser, creating replacement")
                     await self._close_browser(pooled)
                     async with self._pool_lock:
                         if pooled in self._all_browsers:

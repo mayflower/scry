@@ -12,9 +12,11 @@ Browser automation support follows the claude-quickstarts/browser-use-demo appro
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any
 
+logger = logging.getLogger(__name__)
 
 # Browser Tool configuration (following browser-use-demo approach)
 # Uses standard messages API with custom tool definition, NOT beta browser tools API
@@ -130,27 +132,29 @@ def _client():
 
     key = _get_api_key()
     if not key:
-        raise RuntimeError(
-            "Anthropic API key not found in ANTHROPIC_API_KEY or CLAUDE_API_KEY"
-        )
+        raise RuntimeError("Anthropic API key not found in ANTHROPIC_API_KEY or CLAUDE_API_KEY")
     return Anthropic(api_key=key)
 
 
 def _extract_json(text: str) -> dict[str, Any]:
-    # Best-effort JSON extraction
+    """Best-effort JSON extraction using multiple strategies."""
+    # Strategy 1: Direct parse
     try:
         return json.loads(text)
-    except Exception:
-        pass
+    except json.JSONDecodeError:
+        logger.debug("Direct JSON parse failed, trying brace extraction")
+
+    # Strategy 2: Extract content between outermost braces
     start = text.find("{")
     end = text.rfind("}")
     if start != -1 and end != -1 and end > start:
         snippet = text[start : end + 1]
         try:
             return json.loads(snippet)
-        except Exception:
-            pass
-    # Try code fence blocks
+        except json.JSONDecodeError:
+            logger.debug("Brace extraction failed, trying code fence extraction")
+
+    # Strategy 3: Extract from code fence blocks
     if "```" in text:
         parts = text.split("```")
         for i in range(1, len(parts), 2):
@@ -159,8 +163,9 @@ def _extract_json(text: str) -> dict[str, Any]:
                 candidate = candidate[candidate.find("\n") + 1 :]
             try:
                 return json.loads(candidate)
-            except Exception:
-                continue
+            except json.JSONDecodeError:
+                logger.debug("Code fence block %d failed to parse", i)
+
     raise ValueError("Failed to parse JSON from Claude response")
 
 

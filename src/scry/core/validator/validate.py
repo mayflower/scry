@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
+logger = logging.getLogger(__name__)
+
 try:
-    import jsonschema
-except Exception:  # pragma: no cover
-    jsonschema = None  # type: ignore
+    import jsonschema  # type: ignore[import-untyped]
+except ImportError:  # pragma: no cover
+    jsonschema = None  # type: ignore[assignment]
 
 
 def _prune_object(schema: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
@@ -19,9 +22,7 @@ def _prune_object(schema: dict[str, Any], data: dict[str, Any]) -> dict[str, Any
     return out
 
 
-def normalize_against_schema(
-    schema: dict[str, Any], data: dict[str, Any]
-) -> dict[str, Any]:
+def normalize_against_schema(schema: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
     st = schema.get("type")
     if st == "object" and isinstance(data, dict):
         data = _prune_object(schema, data)
@@ -29,7 +30,6 @@ def normalize_against_schema(
     if jsonschema is not None:
         try:
             jsonschema.validate(instance=data, schema=schema)
-        except Exception:
-            # Keep best-effort data even if it doesn't fully validate
-            pass
+        except jsonschema.ValidationError as e:
+            logger.debug("Schema validation failed: %s", e.message)
     return data

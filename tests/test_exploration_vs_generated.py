@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
 from scry.api.dto import ScrapeRequest
 from scry.config.settings import settings
 from scry.core.executor.runner import run_job
@@ -144,15 +145,13 @@ async def test_v2_exploration_vs_v3_generated_navigation():
     v3_data = normalize_data(v3_response.data)
 
     # Both should navigate and extract the same data
-    assert (
-        v2_data == v3_data
-    ), f"V2 and V3 produced different results:\nV2: {v2_data}\nV3: {v3_data}"
+    assert v2_data == v3_data, (
+        f"V2 and V3 produced different results:\nV2: {v2_data}\nV3: {v3_data}"
+    )
 
     # Verify extraction worked
     if v2_data:  # May be empty if navigation didn't work with data URLs
-        assert "john" in v2_data.get("email", "").lower() or "John" in v2_data.get(
-            "name", ""
-        )
+        assert "john" in v2_data.get("email", "").lower() or "John" in v2_data.get("name", "")
 
 
 @pytest.mark.integration
@@ -205,9 +204,7 @@ async def test_v4_exploration_vs_generated_with_self_healing():
     # The generated code should handle the dynamic content
     # Note: This may not work perfectly with data URLs and JavaScript
     if v4_data:
-        assert "Dynamic" in v4_data.get("heading", "") or "Loaded" in v4_data.get(
-            "info", ""
-        )
+        assert "Dynamic" in v4_data.get("heading", "") or "Loaded" in v4_data.get("info", "")
 
 
 @pytest.mark.integration
@@ -258,20 +255,14 @@ async def test_exploration_consistency():
     # Check key fields are consistent
     if v2_data1 and v2_data2:
         # Both should extract the main content
-        assert v2_data1.get("title") and v2_data2.get(
-            "title"
-        ), "Both runs should extract title"
-        assert v2_data1.get("author") and v2_data2.get(
-            "author"
-        ), "Both runs should extract author"
+        assert v2_data1.get("title") and v2_data2.get("title"), "Both runs should extract title"
+        assert v2_data1.get("author") and v2_data2.get("author"), "Both runs should extract author"
 
     # Verify we actually extracted something meaningful
     if v2_data1.get("title"):
         assert "Article" in v2_data1.get("title", "")
     if v2_data1.get("author"):
-        assert "Jane" in v2_data1.get("author", "") or "Smith" in v2_data1.get(
-            "author", ""
-        )
+        assert "Jane" in v2_data1.get("author", "") or "Smith" in v2_data1.get("author", "")
 
 
 @pytest.mark.integration

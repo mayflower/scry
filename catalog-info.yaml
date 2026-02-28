@@ -6,6 +6,7 @@ metadata:
   annotations:
     github.com/project-slug: mayflower/scry
     backstage.io/techdocs-ref: url:https://github.com/mayflower/scry/tree/main
+    sonarqube.org/project-key: mayflower_scry_53657c30-7823-4138-9fbf-78b92dfb99e9
     # Monitoring not applicable
     prometheus.io/alert: "false"
     grafana/dashboard-selector: ""

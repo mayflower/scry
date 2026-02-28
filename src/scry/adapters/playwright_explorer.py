@@ -9,9 +9,10 @@ Cookie banner handling uses LLM-based detection (no string matching).
 
 from __future__ import annotations
 
+import base64 as b64
 import json
+import logging
 import time
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
@@ -35,7 +36,11 @@ from .anthropic import (
 )
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from playwright.async_api import Browser
+
+logger = logging.getLogger(__name__)
 
 # Confidence threshold for cookie banner dismissal
 COOKIE_CONFIDENCE_THRESHOLD = 0.7
@@ -204,9 +209,7 @@ async def _handle_cookie_banner(page: Page) -> CookieBannerResult | None:
             return result
 
         if result.confidence < COOKIE_CONFIDENCE_THRESHOLD:
-            print(
-                f"[Explorer] Banner detected but confidence too low: {result.confidence}"
-            )
+            print(f"[Explorer] Banner detected but confidence too low: {result.confidence}")
             return result
 
         print(
@@ -218,12 +221,8 @@ async def _handle_cookie_banner(page: Page) -> CookieBannerResult | None:
             selector = ref_map.get(result.dismiss_ref)
             if selector:
                 try:
-                    print(
-                        f"[Explorer] Dismissing banner via {result.dismiss_ref} -> {selector}"
-                    )
-                    await page.locator(f'[data-ref="{result.dismiss_ref}"]').click(
-                        timeout=3000
-                    )
+                    print(f"[Explorer] Dismissing banner via {result.dismiss_ref} -> {selector}")
+                    await page.locator(f'[data-ref="{result.dismiss_ref}"]').click(timeout=3000)
                     print("[Explorer] Cookie banner dismissed")
                     await page.wait_for_timeout(1000)
                 except Exception as e:
@@ -299,9 +298,7 @@ async def _get_page_state(page: Page) -> dict[str, Any]:
             return elements;
         }""")
 
-        text = await page.evaluate(
-            "() => document.body.innerText?.substring(0, 2000) || ''"
-        )
+        text = await page.evaluate("() => document.body.innerText?.substring(0, 2000) || ''")
 
         return {
             "title": title,
@@ -373,12 +370,201 @@ Already visited: {len(visited_urls)} URLs{credentials_notice}
 Decide next action (JSON only):"""
 
     try:
-        data, raw = complete_json(sys_prompt, user_prompt, max_tokens=300)
+        data, _ = complete_json(sys_prompt, user_prompt, max_tokens=300)
         print(f"[Explorer] LLM action: {data}")
         return data if isinstance(data, dict) else None
     except Exception as e:
         print(f"[Explorer] LLM decision failed: {e}")
         return None
+
+
+async def _exec_navigate_action(
+    page: Page, action: dict[str, Any], actions: list[Any], urls: list[str], target_domain: str
+) -> bool:
+    """Execute navigate action. Returns True if navigation was successful."""
+    nav_url = action.get("url", "")
+    nav_domain = urlparse(nav_url).netloc.removeprefix("www.")
+    if target_domain not in nav_domain:
+        print(f"[Explorer] Skipping navigation to different domain: {nav_url}")
+        return False
+
+    await page.goto(nav_url, wait_until="domcontentloaded")
+    actions.append(Navigate(url=nav_url))
+    urls.append(nav_url)
+    return True
+
+
+async def _exec_click_action(page: Page, action: dict[str, Any], actions: list[Any]) -> None:
+    """Execute click action."""
+    selector = action.get("selector", "")
+    if selector:
+        await page.click(selector, timeout=5000)
+        actions.append(Click(selector=selector))
+        await page.wait_for_load_state("domcontentloaded", timeout=5000)
+
+
+async def _exec_fill_action(page: Page, action: dict[str, Any], actions: list[Any]) -> None:
+    """Execute fill action."""
+    selector = action.get("selector", "")
+    text = action.get("text", "")
+    if selector and text:
+        await page.fill(selector, text)
+        actions.append(Fill(selector=selector, text=text))
+
+
+async def _exec_select_action(page: Page, action: dict[str, Any], actions: list[Any]) -> None:
+    """Execute select action."""
+    selector = action.get("selector", "")
+    value = action.get("value", "")
+    if selector and value:
+        await page.select_option(selector, value)
+        actions.append(Select(selector=selector, value=value))
+
+
+async def _exec_hover_action(page: Page, action: dict[str, Any], actions: list[Any]) -> None:
+    """Execute hover action."""
+    selector = action.get("selector", "")
+    if selector:
+        await page.hover(selector, timeout=5000)
+        actions.append(Hover(selector=selector))
+        await page.wait_for_timeout(500)
+
+
+async def _exec_keypress_action(page: Page, action: dict[str, Any], actions: list[Any]) -> None:
+    """Execute keypress action."""
+    key = action.get("key", "")
+    selector = action.get("selector")
+    if key:
+        if selector:
+            await page.locator(selector).press(key)
+        else:
+            await page.keyboard.press(key)
+        actions.append(KeyPress(key=key, selector=selector))
+
+
+async def _execute_exploration_action(
+    page: Page,
+    action: dict[str, Any],
+    actions: list[Any],
+    urls: list[str],
+    target_domain: str,
+) -> str | None:
+    """Execute an exploration action. Returns 'break' to stop loop, 'continue' to skip."""
+    action_type = action.get("action", "")
+
+    if action_type == "navigate":
+        success = await _exec_navigate_action(page, action, actions, urls, target_domain)
+        if not success:
+            return "continue"
+    elif action_type == "click":
+        await _exec_click_action(page, action, actions)
+    elif action_type == "fill":
+        await _exec_fill_action(page, action, actions)
+    elif action_type == "select":
+        await _exec_select_action(page, action, actions)
+    elif action_type == "hover":
+        await _exec_hover_action(page, action, actions)
+    elif action_type == "keypress":
+        await _exec_keypress_action(page, action, actions)
+    elif action_type == "extract":
+        return "break"
+
+    return None
+
+
+async def _capture_exploration_state(
+    page: Page,
+    step: int,
+    job_id: str,
+    screenshots_dir: Path,
+    screenshots: list[Path],
+    urls: list[str],
+    html_pages: list[str],
+) -> bytes:
+    """Capture state after an exploration action. Returns screenshot bytes."""
+    await page.wait_for_timeout(1000)
+
+    screenshot_path = screenshots_dir / f"exploration-step-{step}-{job_id}.png"
+    screenshot_bytes = await page.screenshot(full_page=True)
+    screenshot_path.write_bytes(screenshot_bytes)
+    screenshots.append(screenshot_path)
+
+    current_url = page.url
+    if current_url not in urls:
+        urls.append(current_url)
+
+    html_content = await page.content()
+    html_pages.append(html_content)
+
+    return screenshot_bytes
+
+
+def _notify_exploration_progress(
+    progress_callback: Any | None, payload: dict[str, Any], context: str
+) -> None:
+    """Safely invoke a progress callback, logging any errors."""
+    if not progress_callback:
+        return
+    try:
+        progress_callback(payload)
+    except Exception:
+        logger.debug("Progress callback failed at %s", context)
+
+
+async def _run_exploration_step(
+    page: Page,
+    step: int,
+    max_steps: int,
+    nl_request: str,
+    schema: dict[str, Any],
+    urls: list[str],
+    login_params: dict[str, Any] | None,
+    actions: list[Any],
+    target_domain: str,
+    job_id: str,
+    screenshots_dir: Path,
+    screenshots: list[Path],
+    html_pages: list[str],
+    progress_callback: Any | None,
+) -> str:
+    """Execute a single exploration step. Returns 'break', 'continue', or 'ok'."""
+    page_state = await _get_page_state(page)
+
+    action = _decide_next_action(
+        page_state, nl_request, schema, urls, step, max_steps, login_params
+    )
+
+    if not action or action.get("action") == "done":
+        print(f"[Explorer] Agent decided to stop at step {step}")
+        return "break"
+
+    print(f"[Explorer] Action: {action.get('action', '')}")
+
+    result = await _execute_exploration_action(page, action, actions, urls, target_domain)
+    if result == "break":
+        print(f"[Explorer] Extracting data at step {step}")
+        return "break"
+    if result == "continue":
+        return "continue"
+
+    step_screenshot = await _capture_exploration_state(
+        page, step, job_id, screenshots_dir, screenshots, urls, html_pages
+    )
+
+    _notify_exploration_progress(
+        progress_callback,
+        {
+            "step": step,
+            "max_steps": max_steps,
+            "action": action.get("action", "exploring"),
+            "url": page.url,
+            "status": "exploring",
+            "screenshot_b64": b64.b64encode(step_screenshot).decode(),
+        },
+        f"step {step}",
+    )
+
+    return "ok"
 
 
 async def _explore_with_complete_json(
@@ -391,6 +577,7 @@ async def _explore_with_complete_json(
     max_steps: int,
     headless: bool,
     login_params: dict[str, Any] | None,
+    progress_callback: Any | None = None,
 ) -> ExplorationResult:
     """Async exploration using complete_json API for LLM decisions."""
 
@@ -417,9 +604,7 @@ async def _explore_with_complete_json(
             page = await context.new_page()
             page.set_default_timeout(30000)
 
-            print(
-                f"[Explorer] Browser ready in {time.perf_counter() - start_time:.2f}s"
-            )
+            print(f"[Explorer] Browser ready in {time.perf_counter() - start_time:.2f}s")
 
             # Navigate to start URL
             print(f"[Explorer] Navigating to {start_url}")
@@ -444,101 +629,44 @@ async def _explore_with_complete_json(
             screenshot_path.write_bytes(screenshot_bytes)
             screenshots.append(screenshot_path)
 
+            _notify_exploration_progress(
+                progress_callback,
+                {
+                    "step": 0,
+                    "max_steps": max_steps,
+                    "action": "navigated",
+                    "url": start_url,
+                    "status": "exploring",
+                    "screenshot_b64": b64.b64encode(screenshot_bytes).decode(),
+                },
+                "step 0",
+            )
+
             # Exploration loop
             for step in range(1, max_steps + 1):
                 print(f"[Explorer] Step {step}/{max_steps}")
-
-                page_state = await _get_page_state(page)
-
-                action = _decide_next_action(
-                    page_state, nl_request, schema, urls, step, max_steps, login_params
-                )
-
-                if not action or action.get("action") == "done":
-                    print(f"[Explorer] Agent decided to stop at step {step}")
-                    break
-
-                action_type = action.get("action", "")
-                print(f"[Explorer] Action: {action_type}")
-
                 try:
-                    if action_type == "navigate":
-                        nav_url = action.get("url", "")
-                        nav_domain = urlparse(nav_url).netloc.removeprefix("www.")
-                        if target_domain not in nav_domain:
-                            print(
-                                f"[Explorer] Skipping navigation to different domain: {nav_url}"
-                            )
-                            continue
-
-                        await page.goto(nav_url, wait_until="domcontentloaded")
-                        actions.append(Navigate(url=nav_url))
-                        urls.append(nav_url)
-
-                    elif action_type == "click":
-                        selector = action.get("selector", "")
-                        if selector:
-                            await page.click(selector, timeout=5000)
-                            actions.append(Click(selector=selector))
-                            await page.wait_for_load_state(
-                                "domcontentloaded", timeout=5000
-                            )
-
-                    elif action_type == "fill":
-                        selector = action.get("selector", "")
-                        text = action.get("text", "")
-                        if selector and text:
-                            await page.fill(selector, text)
-                            actions.append(Fill(selector=selector, text=text))
-
-                    elif action_type == "select":
-                        selector = action.get("selector", "")
-                        value = action.get("value", "")
-                        if selector and value:
-                            await page.select_option(selector, value)
-                            actions.append(Select(selector=selector, value=value))
-
-                    elif action_type == "hover":
-                        selector = action.get("selector", "")
-                        if selector:
-                            await page.hover(selector, timeout=5000)
-                            actions.append(Hover(selector=selector))
-                            await page.wait_for_timeout(500)
-
-                    elif action_type == "keypress":
-                        key = action.get("key", "")
-                        selector = action.get("selector")
-                        if key:
-                            if selector:
-                                await page.locator(selector).press(key)
-                            else:
-                                await page.keyboard.press(key)
-                            actions.append(KeyPress(key=key, selector=selector))
-
-                    elif action_type == "extract":
-                        print(f"[Explorer] Extracting data at step {step}")
-                        break
-
-                    # Capture state after action
-                    await page.wait_for_timeout(1000)
-
-                    screenshot_path = (
-                        screenshots_dir / f"exploration-step-{step}-{job_id}.png"
+                    result = await _run_exploration_step(
+                        page,
+                        step,
+                        max_steps,
+                        nl_request,
+                        schema,
+                        urls,
+                        login_params,
+                        actions,
+                        target_domain,
+                        job_id,
+                        screenshots_dir,
+                        screenshots,
+                        html_pages,
+                        progress_callback,
                     )
-                    screenshot_bytes = await page.screenshot(full_page=True)
-                    screenshot_path.write_bytes(screenshot_bytes)
-                    screenshots.append(screenshot_path)
-
-                    current_url = page.url
-                    if current_url not in urls:
-                        urls.append(current_url)
-
-                    html_content = await page.content()
-                    html_pages.append(html_content)
-
                 except Exception as e:
                     print(f"[Explorer] Action failed: {e}")
                     continue
+                if result == "break":
+                    break
 
             # Capture final HTML
             if not html_pages:
@@ -587,222 +715,258 @@ IMPORTANT WORKFLOW:
 Element references are stable identifiers from read_page output."""
 
 
+async def _action_navigate(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute navigate action."""
+    import base64
+
+    text = action_input.get("text")
+    if not text:
+        return {"output": "Error: URL required for navigate"}
+    url = text if text.startswith(("http://", "https://")) else f"https://{text}"
+    await page.goto(url, wait_until="domcontentloaded")
+    await page.wait_for_timeout(2000)
+    screenshot_bytes = await page.screenshot()
+    return {
+        "output": f"Navigated to {url}",
+        "base64_image": base64.b64encode(screenshot_bytes).decode(),
+    }
+
+
+async def _action_screenshot(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute screenshot action."""
+    import base64
+
+    screenshot_bytes = await page.screenshot()
+    return {
+        "output": "Screenshot captured",
+        "base64_image": base64.b64encode(screenshot_bytes).decode(),
+    }
+
+
+async def _action_read_page(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute read_page action."""
+    dom_tree, new_ref_map = await _generate_dom_tree(page)
+    ref_map.clear()
+    ref_map.update(new_ref_map)
+    return {"output": dom_tree if dom_tree else "Failed to read page"}
+
+
+async def _action_get_page_text(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute get_page_text action."""
+    text_content = await page.evaluate("() => document.body.innerText || ''")
+    title = await page.title()
+    return {"output": f"Title: {title}\n\n{text_content[:5000]}"}
+
+
+async def _action_left_click(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute left_click action."""
+    ref = action_input.get("ref")
+    coordinate = action_input.get("coordinate")
+    if ref and ref in ref_map:
+        await page.locator(f'[data-ref="{ref}"]').click(timeout=5000)
+        return {"output": f"Clicked element {ref}"}
+    if coordinate and len(coordinate) == 2:
+        await page.mouse.click(coordinate[0], coordinate[1])
+        return {"output": f"Clicked at ({coordinate[0]}, {coordinate[1]})"}
+    return {"output": "Error: ref or coordinate required for click"}
+
+
+async def _action_double_click(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute double_click action."""
+    ref = action_input.get("ref")
+    coordinate = action_input.get("coordinate")
+    if ref and ref in ref_map:
+        await page.locator(f'[data-ref="{ref}"]').dblclick(timeout=5000)
+        return {"output": f"Double-clicked element {ref}"}
+    if coordinate and len(coordinate) == 2:
+        await page.mouse.dblclick(coordinate[0], coordinate[1])
+        return {"output": f"Double-clicked at ({coordinate[0]}, {coordinate[1]})"}
+    return {"output": "Error: ref or coordinate required for double_click"}
+
+
+async def _action_hover(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute hover action."""
+    import base64
+
+    ref = action_input.get("ref")
+    coordinate = action_input.get("coordinate")
+    if ref and ref in ref_map:
+        await page.locator(f'[data-ref="{ref}"]').hover(timeout=5000)
+        await page.wait_for_timeout(500)
+        screenshot_bytes = await page.screenshot()
+        return {
+            "output": f"Hovered over element {ref}",
+            "base64_image": base64.b64encode(screenshot_bytes).decode(),
+        }
+    if coordinate and len(coordinate) == 2:
+        await page.mouse.move(coordinate[0], coordinate[1])
+        await page.wait_for_timeout(500)
+        screenshot_bytes = await page.screenshot()
+        return {
+            "output": f"Hovered at ({coordinate[0]}, {coordinate[1]})",
+            "base64_image": base64.b64encode(screenshot_bytes).decode(),
+        }
+    return {"output": "Error: ref or coordinate required for hover"}
+
+
+async def _action_type(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute type action."""
+    text = action_input.get("text")
+    if not text:
+        return {"output": "Error: text required for type action"}
+    await page.keyboard.type(text)
+    return {"output": f"Typed: {text}"}
+
+
+async def _action_key(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute key press action."""
+    text = action_input.get("text")
+    if not text:
+        return {"output": "Error: key required for key action"}
+    await page.keyboard.press(text)
+    return {"output": f"Pressed key: {text}"}
+
+
+def _compute_scroll_deltas(direction: str, amount: int) -> tuple[int, int]:
+    """Compute scroll deltas based on direction."""
+    delta_x = 0
+    delta_y = 0
+    if direction == "down":
+        delta_y = amount * 100
+    elif direction == "up":
+        delta_y = -amount * 100
+    elif direction == "right":
+        delta_x = amount * 100
+    elif direction == "left":
+        delta_x = -amount * 100
+    return delta_x, delta_y
+
+
+async def _action_scroll(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute scroll action."""
+    import base64
+
+    scroll_direction = action_input.get("scroll_direction") or "down"
+    scroll_amount = action_input.get("scroll_amount", 3)
+    delta_x, delta_y = _compute_scroll_deltas(scroll_direction, scroll_amount)
+    await page.evaluate(f"window.scrollBy({delta_x}, {delta_y})")
+    await page.wait_for_timeout(500)
+    screenshot_bytes = await page.screenshot()
+    return {
+        "output": f"Scrolled {scroll_direction} by {scroll_amount}",
+        "base64_image": base64.b64encode(screenshot_bytes).decode(),
+    }
+
+
+async def _action_scroll_to(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute scroll_to action."""
+    import base64
+
+    ref = action_input.get("ref")
+    if not ref:
+        return {"output": "Error: ref required for scroll_to"}
+    await page.locator(f'[data-ref="{ref}"]').scroll_into_view_if_needed()
+    await page.wait_for_timeout(500)
+    screenshot_bytes = await page.screenshot()
+    return {
+        "output": f"Scrolled to element {ref}",
+        "base64_image": base64.b64encode(screenshot_bytes).decode(),
+    }
+
+
+async def _action_wait(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute wait action."""
+    duration = action_input.get("duration", 1.0)
+    await page.wait_for_timeout(int(duration * 1000))
+    return {"output": f"Waited {duration} seconds"}
+
+
+async def _action_form_input(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute form_input action."""
+    ref = action_input.get("ref")
+    value = action_input.get("value")
+    if not ref or value is None:
+        return {"output": "Error: ref and value required for form_input"}
+    await page.locator(f'[data-ref="{ref}"]').fill(str(value))
+    return {"output": f"Filled {ref} with: {value}"}
+
+
+async def _action_execute_js(
+    page: Page, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> dict[str, Any]:
+    """Execute JavaScript action."""
+    text = action_input.get("text")
+    if not text:
+        return {"output": "Error: JavaScript code required"}
+    result = await page.evaluate(text)
+    return {"output": str(result) if result is not None else "undefined"}
+
+
+# Action dispatcher mapping
+_BROWSER_ACTIONS: dict[str, Any] = {
+    "navigate": _action_navigate,
+    "screenshot": _action_screenshot,
+    "read_page": _action_read_page,
+    "get_page_text": _action_get_page_text,
+    "left_click": _action_left_click,
+    "double_click": _action_double_click,
+    "hover": _action_hover,
+    "type": _action_type,
+    "key": _action_key,
+    "scroll": _action_scroll,
+    "scroll_to": _action_scroll_to,
+    "wait": _action_wait,
+    "form_input": _action_form_input,
+    "execute_js": _action_execute_js,
+}
+
+
 async def _execute_browser_action(
     page: Page,
     action_input: dict[str, Any],
     ref_map: dict[str, str],
 ) -> dict[str, Any]:
-    """Execute a browser tool action and return the result.
-
-    Args:
-        page: Playwright page object
-        action_input: The tool input containing action and parameters
-        ref_map: Map of ref_X identifiers to CSS selectors
-
-    Returns:
-        Tool result dict with output and optionally base64_image
-    """
-    import base64
-
+    """Execute a browser tool action and return the result."""
     action = action_input.get("action", "")
-    text = action_input.get("text")
-    ref = action_input.get("ref")
-    coordinate = action_input.get("coordinate")
-    scroll_direction = action_input.get("scroll_direction")
-    scroll_amount = action_input.get("scroll_amount", 3)
-    duration = action_input.get("duration", 1.0)
-    value = action_input.get("value")
 
     try:
-        if action == "navigate":
-            if not text:
-                return {"output": "Error: URL required for navigate"}
-            url = (
-                text if text.startswith(("http://", "https://")) else f"https://{text}"
-            )
-            await page.goto(url, wait_until="domcontentloaded")
-            await page.wait_for_timeout(2000)
-            screenshot_bytes = await page.screenshot()
-            return {
-                "output": f"Navigated to {url}",
-                "base64_image": base64.b64encode(screenshot_bytes).decode(),
-            }
-
-        elif action == "screenshot":
-            screenshot_bytes = await page.screenshot()
-            return {
-                "output": "Screenshot captured",
-                "base64_image": base64.b64encode(screenshot_bytes).decode(),
-            }
-
-        elif action == "read_page":
-            # Generate DOM tree with refs
-            dom_tree, new_ref_map = await _generate_dom_tree(page)
-            ref_map.clear()
-            ref_map.update(new_ref_map)
-            return {"output": dom_tree if dom_tree else "Failed to read page"}
-
-        elif action == "get_page_text":
-            text_content = await page.evaluate("() => document.body.innerText || ''")
-            title = await page.title()
-            return {"output": f"Title: {title}\n\n{text_content[:5000]}"}
-
-        elif action == "left_click":
-            if ref and ref in ref_map:
-                await page.locator(f'[data-ref="{ref}"]').click(timeout=5000)
-                return {"output": f"Clicked element {ref}"}
-            elif coordinate and len(coordinate) == 2:
-                await page.mouse.click(coordinate[0], coordinate[1])
-                return {"output": f"Clicked at ({coordinate[0]}, {coordinate[1]})"}
-            else:
-                return {"output": "Error: ref or coordinate required for click"}
-
-        elif action == "double_click":
-            if ref and ref in ref_map:
-                await page.locator(f'[data-ref="{ref}"]').dblclick(timeout=5000)
-                return {"output": f"Double-clicked element {ref}"}
-            elif coordinate and len(coordinate) == 2:
-                await page.mouse.dblclick(coordinate[0], coordinate[1])
-                return {
-                    "output": f"Double-clicked at ({coordinate[0]}, {coordinate[1]})"
-                }
-            else:
-                return {"output": "Error: ref or coordinate required for double_click"}
-
-        elif action == "hover":
-            if ref and ref in ref_map:
-                await page.locator(f'[data-ref="{ref}"]').hover(timeout=5000)
-                await page.wait_for_timeout(500)
-                screenshot_bytes = await page.screenshot()
-                return {
-                    "output": f"Hovered over element {ref}",
-                    "base64_image": base64.b64encode(screenshot_bytes).decode(),
-                }
-            elif coordinate and len(coordinate) == 2:
-                await page.mouse.move(coordinate[0], coordinate[1])
-                await page.wait_for_timeout(500)
-                screenshot_bytes = await page.screenshot()
-                return {
-                    "output": f"Hovered at ({coordinate[0]}, {coordinate[1]})",
-                    "base64_image": base64.b64encode(screenshot_bytes).decode(),
-                }
-            else:
-                return {"output": "Error: ref or coordinate required for hover"}
-
-        elif action == "type":
-            if not text:
-                return {"output": "Error: text required for type action"}
-            await page.keyboard.type(text)
-            return {"output": f"Typed: {text}"}
-
-        elif action == "key":
-            if not text:
-                return {"output": "Error: key required for key action"}
-            await page.keyboard.press(text)
-            return {"output": f"Pressed key: {text}"}
-
-        elif action == "scroll":
-            if not scroll_direction:
-                scroll_direction = "down"
-            delta_y = (
-                scroll_amount * 100
-                if scroll_direction == "down"
-                else -scroll_amount * 100
-                if scroll_direction == "up"
-                else 0
-            )
-            delta_x = (
-                scroll_amount * 100
-                if scroll_direction == "right"
-                else -scroll_amount * 100
-                if scroll_direction == "left"
-                else 0
-            )
-            await page.evaluate(f"window.scrollBy({delta_x}, {delta_y})")
-            await page.wait_for_timeout(500)
-            screenshot_bytes = await page.screenshot()
-            return {
-                "output": f"Scrolled {scroll_direction} by {scroll_amount}",
-                "base64_image": base64.b64encode(screenshot_bytes).decode(),
-            }
-
-        elif action == "scroll_to":
-            if not ref:
-                return {"output": "Error: ref required for scroll_to"}
-            await page.locator(f'[data-ref="{ref}"]').scroll_into_view_if_needed()
-            await page.wait_for_timeout(500)
-            screenshot_bytes = await page.screenshot()
-            return {
-                "output": f"Scrolled to element {ref}",
-                "base64_image": base64.b64encode(screenshot_bytes).decode(),
-            }
-
-        elif action == "wait":
-            await page.wait_for_timeout(int(duration * 1000))
-            return {"output": f"Waited {duration} seconds"}
-
-        elif action == "form_input":
-            if not ref or value is None:
-                return {"output": "Error: ref and value required for form_input"}
-            await page.locator(f'[data-ref="{ref}"]').fill(str(value))
-            return {"output": f"Filled {ref} with: {value}"}
-
-        elif action == "execute_js":
-            if not text:
-                return {"output": "Error: JavaScript code required"}
-            result = await page.evaluate(text)
-            return {"output": str(result) if result is not None else "undefined"}
-
-        else:
-            return {"output": f"Unknown action: {action}"}
-
+        handler = _BROWSER_ACTIONS.get(action)
+        if handler:
+            return await handler(page, action_input, ref_map)
+        return {"output": f"Unknown action: {action}"}
     except Exception as e:
         return {"output": f"Error executing {action}: {e}"}
 
 
-async def _explore_with_browser_tools(
-    start_url: str,
-    nl_request: str,
-    schema: dict[str, Any],
-    screenshots_dir: Path,
-    html_dir: Path,
-    job_id: str,
-    max_steps: int,
-    headless: bool,
-    login_params: dict[str, Any] | None,
-) -> ExplorationResult:
-    """Exploration using browser tools with standard messages API.
-
-    Uses the claude-quickstarts/browser-use-demo approach:
-    - Custom tool schema passed to client.messages.create()
-    - Manual tool execution with async Playwright
-    - No special beta API required
-    """
-
-    print(f"[Explorer] Starting browser tools exploration for job {job_id}")
-
-    ir_actions: list[Any] = []
-    urls: list[str] = []
-    html_pages: list[str] = []
-    screenshots: list[Path] = []
-    data: dict[str, Any] = {}
-    ref_map: dict[str, str] = {}  # Track element references
-
-    screenshots_dir.mkdir(parents=True, exist_ok=True)
-    html_dir.mkdir(parents=True, exist_ok=True)
-
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=headless)
-        try:
-            context = await browser.new_context(
-                viewport={"width": 1280, "height": 720},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            )
-            page = await context.new_page()
-            page.set_default_timeout(30000)
-
-            # Create task description
-            task_description = f"""Task: {nl_request}
+def _build_task_description(nl_request: str, schema: dict[str, Any], start_url: str) -> str:
+    """Build the task description for the exploration agent."""
+    return f"""Task: {nl_request}
 
 Target schema for data extraction:
 {json.dumps(schema, indent=2)}
@@ -818,132 +982,319 @@ Instructions:
 
 When you're done or stuck, explain what you accomplished."""
 
-            messages: list[dict[str, Any]] = [
-                {"role": "user", "content": task_description}
-            ]
 
-            for iteration in range(max_steps):
-                print(f"[Explorer] Iteration {iteration + 1}/{max_steps}")
+def _process_response_block(block: Any) -> tuple[dict[str, Any] | None, bool]:
+    """Process a single response block.
 
-                try:
-                    response = call_with_browser_tool(
-                        messages=messages,
-                        max_tokens=4096,
-                        system_prompt=BROWSER_TOOLS_SYSTEM_PROMPT,
-                    )
-                except Exception as e:
-                    print(f"[Explorer] API error: {e}")
-                    break
+    Returns:
+        Tuple of (content_dict, is_tool_use).
+    """
+    if not hasattr(block, "type"):
+        return None, False
 
-                # Process response
-                assistant_content: list[dict[str, Any]] = []
-                has_tool_use = False
+    if block.type == "text":
+        print(f"[Explorer] Claude: {block.text[:200]}")
+        return {"type": "text", "text": block.text}, False
 
-                for block in response.content:
-                    if hasattr(block, "type"):
-                        if block.type == "text":
-                            assistant_content.append(
-                                {"type": "text", "text": block.text}
-                            )
-                            print(f"[Explorer] Claude: {block.text[:200]}")
-                        elif block.type == "tool_use":
-                            has_tool_use = True
-                            assistant_content.append(
-                                {
-                                    "type": "tool_use",
-                                    "id": block.id,
-                                    "name": block.name,
-                                    "input": block.input,
-                                }
-                            )
+    if block.type == "tool_use":
+        return {
+            "type": "tool_use",
+            "id": block.id,
+            "name": block.name,
+            "input": block.input,
+        }, True
 
-                messages.append({"role": "assistant", "content": assistant_content})
+    return None, False
 
-                if not has_tool_use or response.stop_reason != "tool_use":
-                    print("[Explorer] Agent finished")
-                    break
 
-                # Execute tool actions
-                tool_results: list[dict[str, Any]] = []
+def _build_tool_result_content(result: dict[str, Any]) -> list[dict[str, Any]]:
+    """Build content array for tool result."""
+    content: list[dict[str, Any]] = []
 
-                for block in response.content:
-                    if not hasattr(block, "type") or block.type != "tool_use":
-                        continue
+    if result.get("output"):
+        content.append({"type": "text", "text": result["output"]})
 
-                    if block.name != "browser":
-                        continue
+    if result.get("base64_image"):
+        content.append(
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/png",
+                    "data": result["base64_image"],
+                },
+            }
+        )
 
-                    action_input = block.input
-                    action_name = action_input.get("action", "")
-                    print(f"[Explorer] Executing: {action_name}")
+    return content
 
-                    result = await _execute_browser_action(page, action_input, ref_map)
 
-                    # Build tool result
-                    content: list[dict[str, Any]] = []
-                    if result.get("output"):
-                        content.append({"type": "text", "text": result["output"]})
-                    if result.get("base64_image"):
-                        content.append(
-                            {
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": "image/png",
-                                    "data": result["base64_image"],
-                                },
-                            }
-                        )
+def _track_ir_action(
+    action_name: str, action_input: dict[str, Any], ref_map: dict[str, str]
+) -> tuple[Any | None, str | None]:
+    """Convert browser action to IR step.
 
-                    tool_results.append(
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": content,
-                        }
-                    )
+    Returns:
+        Tuple of (ir_action, url_if_navigate).
+    """
+    if action_name == "navigate":
+        nav_url = action_input.get("text", "")
+        if nav_url:
+            if not nav_url.startswith(("http://", "https://")):
+                nav_url = f"https://{nav_url}"
+            return Navigate(url=nav_url), nav_url
 
-                    # Track IR actions
-                    if action_name == "navigate":
-                        nav_url = action_input.get("text", "")
-                        if nav_url:
-                            if not nav_url.startswith(("http://", "https://")):
-                                nav_url = f"https://{nav_url}"
-                            urls.append(nav_url)
-                            ir_actions.append(Navigate(url=nav_url))
-                    elif action_name == "left_click":
-                        ref = action_input.get("ref")
-                        if ref and ref in ref_map:
-                            ir_actions.append(Click(selector=f'[data-ref="{ref}"]'))
-                    elif action_name == "form_input":
-                        ref = action_input.get("ref")
-                        value = action_input.get("value", "")
-                        if ref and ref in ref_map:
-                            ir_actions.append(
-                                Fill(selector=f'[data-ref="{ref}"]', text=str(value))
-                            )
+    if action_name == "left_click":
+        ref = action_input.get("ref")
+        if ref and ref in ref_map:
+            return Click(selector=f'[data-ref="{ref}"]'), None
 
-                    # Save screenshot if taken
-                    if result.get("base64_image"):
-                        screenshot_path = (
-                            screenshots_dir
-                            / f"exploration-step-{iteration}-{job_id}.png"
-                        )
-                        import base64 as b64
+    if action_name == "form_input":
+        ref = action_input.get("ref")
+        value = action_input.get("value", "")
+        if ref and ref in ref_map:
+            return Fill(selector=f'[data-ref="{ref}"]', text=str(value)), None
 
-                        screenshot_path.write_bytes(
-                            b64.b64decode(result["base64_image"])
-                        )
-                        screenshots.append(screenshot_path)
+    return None, None
 
-                if tool_results:
-                    messages.append({"role": "user", "content": tool_results})
+
+def _save_screenshot(
+    result: dict[str, Any], screenshots_dir: Path, iteration: int, job_id: str
+) -> Path | None:
+    """Save screenshot from result if present."""
+    if not result.get("base64_image"):
+        return None
+
+    import base64 as b64
+
+    screenshot_path = screenshots_dir / f"exploration-step-{iteration}-{job_id}.png"
+    screenshot_path.write_bytes(b64.b64decode(result["base64_image"]))
+    return screenshot_path
+
+
+async def _process_tool_block(
+    block: Any,
+    page: Page,
+    ref_map: dict[str, str],
+    screenshots_dir: Path,
+    iteration: int,
+    job_id: str,
+    ir_actions: list[Any],
+    urls: list[str],
+    screenshots: list[Path],
+) -> dict[str, Any] | None:
+    """Process a single tool use block."""
+    if not hasattr(block, "type") or block.type != "tool_use":
+        return None
+    if block.name != "browser":
+        return None
+
+    action_input = block.input
+    action_name = action_input.get("action", "")
+    print(f"[Explorer] Executing: {action_name}")
+
+    result = await _execute_browser_action(page, action_input, ref_map)
+    content = _build_tool_result_content(result)
+
+    # Track IR action
+    ir_action, nav_url = _track_ir_action(action_name, action_input, ref_map)
+    if ir_action:
+        ir_actions.append(ir_action)
+    if nav_url:
+        urls.append(nav_url)
+
+    # Save screenshot
+    screenshot_path = _save_screenshot(result, screenshots_dir, iteration, job_id)
+    if screenshot_path:
+        screenshots.append(screenshot_path)
+
+    return {
+        "type": "tool_result",
+        "tool_use_id": block.id,
+        "content": content,
+    }
+
+
+def _process_all_response_blocks(response: Any) -> tuple[list[dict[str, Any]], bool]:
+    """Process all response blocks and return assistant content and tool use flag."""
+    assistant_content: list[dict[str, Any]] = []
+    has_tool_use = False
+
+    for block in response.content:
+        content_dict, is_tool = _process_response_block(block)
+        if content_dict:
+            assistant_content.append(content_dict)
+        if is_tool:
+            has_tool_use = True
+
+    return assistant_content, has_tool_use
+
+
+async def _execute_all_tool_blocks(
+    response: Any,
+    page: Page,
+    ref_map: dict[str, str],
+    screenshots_dir: Path,
+    iteration: int,
+    job_id: str,
+    ir_actions: list[Any],
+    urls: list[str],
+    screenshots: list[Path],
+) -> list[dict[str, Any]]:
+    """Execute all tool blocks in a response and return results."""
+    tool_results: list[dict[str, Any]] = []
+    for block in response.content:
+        result = await _process_tool_block(
+            block,
+            page,
+            ref_map,
+            screenshots_dir,
+            iteration,
+            job_id,
+            ir_actions,
+            urls,
+            screenshots,
+        )
+        if result:
+            tool_results.append(result)
+    return tool_results
+
+
+async def _run_exploration_loop(
+    page: Page,
+    messages: list[dict[str, Any]],
+    max_steps: int,
+    ref_map: dict[str, str],
+    screenshots_dir: Path,
+    job_id: str,
+    ir_actions: list[Any],
+    urls: list[str],
+    screenshots: list[Path],
+    progress_callback: Any | None = None,
+) -> None:
+    """Run the main exploration loop."""
+    for iteration in range(max_steps):
+        print(f"[Explorer] Iteration {iteration + 1}/{max_steps}")
+
+        try:
+            response = call_with_browser_tool(
+                messages=messages,
+                max_tokens=4096,
+                system_prompt=BROWSER_TOOLS_SYSTEM_PROMPT,
+            )
+        except Exception as e:
+            print(f"[Explorer] API error: {e}")
+            break
+
+        assistant_content, has_tool_use = _process_all_response_blocks(response)
+        messages.append({"role": "assistant", "content": assistant_content})
+
+        if not has_tool_use or response.stop_reason != "tool_use":
+            print("[Explorer] Agent finished")
+            break
+
+        prev_screenshot_count = len(screenshots)
+
+        tool_results = await _execute_all_tool_blocks(
+            response,
+            page,
+            ref_map,
+            screenshots_dir,
+            iteration,
+            job_id,
+            ir_actions,
+            urls,
+            screenshots,
+        )
+
+        # Emit progress with latest screenshot if new ones were captured
+        if progress_callback and len(screenshots) > prev_screenshot_count:
+            try:
+                latest = screenshots[-1]
+                screenshot_b64 = b64.b64encode(latest.read_bytes()).decode()
+                progress_callback(
+                    {
+                        "step": iteration + 1,
+                        "max_steps": max_steps,
+                        "action": "browser_action",
+                        "url": page.url,
+                        "status": "exploring",
+                        "screenshot_b64": screenshot_b64,
+                    }
+                )
+            except Exception:
+                logger.debug("Progress callback failed at iteration %d", iteration)
+
+        if tool_results:
+            messages.append({"role": "user", "content": tool_results})
+
+
+async def _explore_with_browser_tools(
+    start_url: str,
+    nl_request: str,
+    schema: dict[str, Any],
+    screenshots_dir: Path,
+    html_dir: Path,
+    job_id: str,
+    max_steps: int,
+    headless: bool,
+    login_params: dict[str, Any] | None,
+    progress_callback: Any | None = None,
+) -> ExplorationResult:
+    """Exploration using browser tools with standard messages API.
+
+    Uses the claude-quickstarts/browser-use-demo approach:
+    - Custom tool schema passed to client.messages.create()
+    - Manual tool execution with async Playwright
+    - No special beta API required
+
+    Args:
+        login_params: Reserved for future authentication support (not yet implemented)
+    """
+    _ = login_params  # Reserved for future use
+
+    print(f"[Explorer] Starting browser tools exploration for job {job_id}")
+
+    ir_actions: list[Any] = []
+    urls: list[str] = []
+    html_pages: list[str] = []
+    screenshots: list[Path] = []
+    ref_map: dict[str, str] = {}
+
+    screenshots_dir.mkdir(parents=True, exist_ok=True)
+    html_dir.mkdir(parents=True, exist_ok=True)
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=headless)
+        try:
+            context = await browser.new_context(
+                viewport={"width": 1280, "height": 720},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            )
+            page = await context.new_page()
+            page.set_default_timeout(30000)
+
+            task_description = _build_task_description(nl_request, schema, start_url)
+            messages: list[dict[str, Any]] = [{"role": "user", "content": task_description}]
+
+            await _run_exploration_loop(
+                page,
+                messages,
+                max_steps,
+                ref_map,
+                screenshots_dir,
+                job_id,
+                ir_actions,
+                urls,
+                screenshots,
+                progress_callback=progress_callback,
+            )
 
             # Capture final HTML
             try:
                 html_pages.append(await page.content())
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to capture final HTML: %s", e)
 
             print(f"[Explorer] Completed with {len(ir_actions)} IR actions")
 
@@ -955,7 +1306,7 @@ When you're done or stuck, explain what you accomplished."""
         screenshots=screenshots,
         html_pages=html_pages,
         urls=urls if urls else [start_url],
-        data=data,
+        data={},
     )
 
 
@@ -982,6 +1333,9 @@ async def explore_with_playwright(
     to async Playwright with complete_json API for decisions.
 
     Cookie banners are handled via LLM-based detection (no string matching).
+
+    Args:
+        progress_callback: Optional callback for real-time progress with screenshots.
     """
     print(f"[Explorer] Starting exploration for job {job_id}")
     print(f"[Explorer] Target: {start_url}")
@@ -1009,6 +1363,7 @@ async def explore_with_playwright(
             max_steps=max_steps,
             headless=headless,
             login_params=login_params,
+            progress_callback=progress_callback,
         )
     else:
         print("[Explorer] Using async Playwright with complete_json API")
@@ -1022,4 +1377,5 @@ async def explore_with_playwright(
             max_steps=max_steps,
             headless=headless,
             login_params=login_params,
+            progress_callback=progress_callback,
         )

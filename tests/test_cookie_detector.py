@@ -12,6 +12,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from scry.core.cookie.detector import (
     BannerHints,
     CookieBannerResult,
@@ -393,10 +394,11 @@ class TestCodeGenIntegration:
 
     def test_generator_uses_detected_selector(self):
         """Test that generator uses detected cookie selector."""
-        from scry.core.codegen.generator import generate_script
-        from scry.core.ir.model import Navigate, ScrapePlan
         import tempfile
         from pathlib import Path
+
+        from scry.core.codegen.generator import generate_script
+        from scry.core.ir.model import Navigate, ScrapePlan
 
         plan = ScrapePlan(steps=[Navigate(url="https://example.com")])
 
@@ -421,10 +423,11 @@ class TestCodeGenIntegration:
 
     def test_generator_no_selector_no_cookie_handling(self):
         """Test that without a detected selector, no cookie handling code is generated."""
-        from scry.core.codegen.generator import generate_script
-        from scry.core.ir.model import Navigate, ScrapePlan
         import tempfile
         from pathlib import Path
+
+        from scry.core.codegen.generator import generate_script
+        from scry.core.ir.model import Navigate, ScrapePlan
 
         plan = ScrapePlan(steps=[Navigate(url="https://example.com")])
 

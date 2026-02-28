@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
 import pytest
+
 from scry.runtime.events import InMemoryBus, RedisBus, get_bus
 
 
@@ -165,9 +166,7 @@ class TestInMemoryBus:
                     "properties": {
                         "nested": {
                             "type": "object",
-                            "properties": {
-                                "deep": {"type": "array", "items": {"type": "string"}}
-                            },
+                            "properties": {"deep": {"type": "array", "items": {"type": "string"}}},
                         }
                     },
                 },

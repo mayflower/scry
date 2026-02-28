@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+
 from scry.api.dto import ScrapeResponse
 from scry.app import create_app
 

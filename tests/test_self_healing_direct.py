@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+
 from scry.core.codegen.generator import generate_script
 from scry.core.ir.model import (
     Click,
@@ -45,9 +46,7 @@ class TestDirectSelfHealing:
             job_id = "test_basic_nav"
 
             # Generate and run script
-            script_path = generate_script(
-                plan, job_id, artifacts_root, headless=True, options={}
-            )
+            script_path = generate_script(plan, job_id, artifacts_root, headless=True, options={})
 
             result = subprocess.run(
                 ["python", str(script_path)],
@@ -80,9 +79,7 @@ class TestDirectSelfHealing:
             job_id = "test_validation_fail"
 
             # First attempt - should fail
-            script_path = generate_script(
-                plan, job_id, artifacts_root, headless=True, options={}
-            )
+            script_path = generate_script(plan, job_id, artifacts_root, headless=True, options={})
 
             result = subprocess.run(
                 ["python", str(script_path)],
@@ -238,21 +235,21 @@ def main():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        
+
         try:
             # Navigate to site
             page.goto("https://mayflower.de/", wait_until="domcontentloaded")
             page.wait_for_timeout(2000)
-            
+
             # Extract some basic data
             data = {}
-            
+
             # Try to get page title
             try:
                 data["title"] = page.title()
             except Exception:
                 data["title"] = None
-            
+
             # Try to get main heading
             try:
                 h1 = page.query_selector("h1")
@@ -260,7 +257,7 @@ def main():
                     data["heading"] = h1.text_content()
             except Exception:
                 data["heading"] = None
-            
+
             # Try to find company name
             try:
                 # Look for "Mayflower" in the page
@@ -270,9 +267,9 @@ def main():
                     data["company_found"] = False
             except Exception:
                 data["company_found"] = False
-            
+
             print(json.dumps(data, indent=2))
-            
+
         except Exception as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)

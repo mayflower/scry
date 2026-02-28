@@ -68,15 +68,17 @@ class RedisBus:
         return json.loads(val) if val else None  # type: ignore[arg-type]
 
 
-def get_bus():
+# Module-level singleton for in-memory backend (shared across threads)
+_INMEMORY_SINGLETON: InMemoryBus | None = None
+
+
+def get_bus() -> InMemoryBus | RedisBus:
     backend = os.getenv("EVENT_BACKEND", "inmemory")
     if backend == "redis":
         url = os.getenv("REDIS_URL", "redis://redis:6379/0")
         return RedisBus(url)
     # Singleton per-process for in-memory backend so API and worker threads share state
     global _INMEMORY_SINGLETON
-    try:
-        _INMEMORY_SINGLETON
-    except NameError:
-        _INMEMORY_SINGLETON = InMemoryBus()  # type: ignore[var-annotated]
+    if _INMEMORY_SINGLETON is None:
+        _INMEMORY_SINGLETON = InMemoryBus()
     return _INMEMORY_SINGLETON
